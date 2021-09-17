@@ -1,0 +1,29 @@
+FuturesExecutor
+===============
+
+.. currentmodule:: coffea.processor
+
+.. autoclass:: FuturesExecutor
+   :show-inheritance:
+
+   .. rubric:: Attributes Summary
+
+   .. autosummary::
+
+      ~FuturesExecutor.tailtimeout
+      ~FuturesExecutor.workers
+
+   .. rubric:: Methods Summary
+
+   .. autosummary::
+
+      ~FuturesExecutor.__call__
+
+   .. rubric:: Attributes Documentation
+
+   .. autoattribute:: tailtimeout
+   .. autoattribute:: workers
+
+   .. rubric:: Methods Documentation
+
+   .. automethod:: __call__

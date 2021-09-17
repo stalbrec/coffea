@@ -1,0 +1,29 @@
+ParslExecutor
+=============
+
+.. currentmodule:: coffea.processor
+
+.. autoclass:: ParslExecutor
+   :show-inheritance:
+
+   .. rubric:: Attributes Summary
+
+   .. autosummary::
+
+      ~ParslExecutor.config
+      ~ParslExecutor.tailtimeout
+
+   .. rubric:: Methods Summary
+
+   .. autosummary::
+
+      ~ParslExecutor.__call__
+
+   .. rubric:: Attributes Documentation
+
+   .. autoattribute:: config
+   .. autoattribute:: tailtimeout
+
+   .. rubric:: Methods Documentation
+
+   .. automethod:: __call__

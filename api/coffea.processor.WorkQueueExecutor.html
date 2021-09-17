@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.17.1: http://docutils.sourceforge.net/" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>WorkQueueExecutor &mdash; coffea 0.7.7 documentation</title>
+      <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+      <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+      <link rel="stylesheet" href="../_static/graphviz.css" type="text/css" />
+  <!--[if lt IE 9]>
+    <script src="../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
+        <script src="../_static/jquery.js"></script>
+        <script src="../_static/underscore.js"></script>
+        <script src="../_static/doctools.js"></script>
+        <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Runner" href="coffea.processor.Runner.html" />
+    <link rel="prev" title="ParslExecutor" href="coffea.processor.ParslExecutor.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+            <a href="../index.html" class="icon icon-home"> coffea
+          </a>
+              <div class="version">
+                0.7
+              </div>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../installation.html">Installing coffea</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../examples.html">Coffea by Example</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../concepts.html">Coffea concepts</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="../reference.html">API Reference Guide</a><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="../modules/coffea.analysis_tools.html">coffea.analysis_tools</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../modules/coffea.btag_tools.html">coffea.btag_tools</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../modules/coffea.hist.html">coffea.hist</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../modules/coffea.jetmet_tools.html">coffea.jetmet_tools</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../modules/coffea.lookup_tools.html">coffea.lookup_tools</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../modules/coffea.lumi_tools.html">coffea.lumi_tools</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../modules/coffea.nanoevents.html">coffea.nanoevents</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../modules/coffea.nanoevents.methods.base.html">coffea.nanoevents.methods.base</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../modules/coffea.nanoevents.methods.candidate.html">coffea.nanoevents.methods.candidate</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../modules/coffea.nanoevents.methods.nanoaod.html">coffea.nanoevents.methods.nanoaod</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../modules/coffea.nanoevents.methods.vector.html">coffea.nanoevents.methods.vector</a></li>
+<li class="toctree-l2 current"><a class="reference internal" href="../modules/coffea.processor.html">coffea.processor</a><ul class="current">
+<li class="toctree-l3"><a class="reference internal" href="../modules/coffea.processor.html#functions">Functions</a></li>
+<li class="toctree-l3 current"><a class="reference internal" href="../modules/coffea.processor.html#classes">Classes</a><ul class="current">
+<li class="toctree-l4"><a class="reference internal" href="coffea.processor.ProcessorABC.html">ProcessorABC</a></li>
+<li class="toctree-l4"><a class="reference internal" href="coffea.processor.LazyDataFrame.html">LazyDataFrame</a></li>
+<li class="toctree-l4"><a class="reference internal" href="coffea.processor.Weights.html">Weights</a></li>
+<li class="toctree-l4"><a class="reference internal" href="coffea.processor.PackedSelection.html">PackedSelection</a></li>
+<li class="toctree-l4"><a class="reference internal" href="coffea.processor.IterativeExecutor.html">IterativeExecutor</a></li>
+<li class="toctree-l4"><a class="reference internal" href="coffea.processor.FuturesExecutor.html">FuturesExecutor</a></li>
+<li class="toctree-l4"><a class="reference internal" href="coffea.processor.DaskExecutor.html">DaskExecutor</a></li>
+<li class="toctree-l4"><a class="reference internal" href="coffea.processor.ParslExecutor.html">ParslExecutor</a></li>
+<li class="toctree-l4 current"><a class="current reference internal" href="#">WorkQueueExecutor</a></li>
+<li class="toctree-l4"><a class="reference internal" href="coffea.processor.Runner.html">Runner</a></li>
+<li class="toctree-l4"><a class="reference internal" href="coffea.processor.AccumulatorABC.html">AccumulatorABC</a></li>
+<li class="toctree-l4"><a class="reference internal" href="coffea.processor.value_accumulator.html">value_accumulator</a></li>
+<li class="toctree-l4"><a class="reference internal" href="coffea.processor.list_accumulator.html">list_accumulator</a></li>
+<li class="toctree-l4"><a class="reference internal" href="coffea.processor.set_accumulator.html">set_accumulator</a></li>
+<li class="toctree-l4"><a class="reference internal" href="coffea.processor.dict_accumulator.html">dict_accumulator</a></li>
+<li class="toctree-l4"><a class="reference internal" href="coffea.processor.defaultdict_accumulator.html">defaultdict_accumulator</a></li>
+<li class="toctree-l4"><a class="reference internal" href="coffea.processor.column_accumulator.html">column_accumulator</a></li>
+<li class="toctree-l4"><a class="reference internal" href="coffea.processor.iterative_executor.html">iterative_executor</a></li>
+<li class="toctree-l4"><a class="reference internal" href="coffea.processor.futures_executor.html">futures_executor</a></li>
+<li class="toctree-l4"><a class="reference internal" href="coffea.processor.dask_executor.html">dask_executor</a></li>
+<li class="toctree-l4"><a class="reference internal" href="coffea.processor.parsl_executor.html">parsl_executor</a></li>
+<li class="toctree-l4"><a class="reference internal" href="coffea.processor.work_queue_executor.html">work_queue_executor</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="../modules/coffea.processor.html#class-inheritance-diagram">Class Inheritance Diagram</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="../modules/coffea.util.html">coffea.util</a></li>
+</ul>
+</li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">coffea</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home"></a> &raquo;</li>
+          <li><a href="../reference.html">API Reference Guide</a> &raquo;</li>
+          <li><a href="../modules/coffea.processor.html">coffea.processor</a> &raquo;</li>
+      <li>WorkQueueExecutor</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/api/coffea.processor.WorkQueueExecutor.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  
+<style>
+/* CSS overrides for sphinx_rtd_theme */
+
+/* 24px margin */
+.nbinput.nblast.container,
+.nboutput.nblast.container {
+    margin-bottom: 19px;  /* padding has already 5px */
+}
+
+/* ... except between code cells! */
+.nblast.container + .nbinput.container {
+    margin-top: -19px;
+}
+
+.admonition > p:before {
+    margin-right: 4px;  /* make room for the exclamation icon */
+}
+
+/* Fix math alignment, see https://github.com/rtfd/sphinx_rtd_theme/pull/686 */
+.math {
+    text-align: unset;
+}
+</style>
+<section id="workqueueexecutor">
+<h1>WorkQueueExecutor<a class="headerlink" href="#workqueueexecutor" title="Permalink to this headline"></a></h1>
+<dl class="py class">
+<dt class="sig sig-object py" id="coffea.processor.WorkQueueExecutor">
+<em class="property"><span class="pre">class</span> </em><span class="sig-prename descclassname"><span class="pre">coffea.processor.</span></span><span class="sig-name descname"><span class="pre">WorkQueueExecutor</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="pre">status:</span> <span class="pre">bool</span> <span class="pre">=</span> <span class="pre">True</span></em>, <em class="sig-param"><span class="pre">unit:</span> <span class="pre">str</span> <span class="pre">=</span> <span class="pre">'items'</span></em>, <em class="sig-param"><span class="pre">desc:</span> <span class="pre">str</span> <span class="pre">=</span> <span class="pre">'Processing'</span></em>, <em class="sig-param"><span class="pre">compression:</span> <span class="pre">Optional[int]</span> <span class="pre">=</span> <span class="pre">9</span></em>, <em class="sig-param"><span class="pre">function_name:</span> <span class="pre">Optional[str]</span> <span class="pre">=</span> <span class="pre">None</span></em>, <em class="sig-param"><span class="pre">retries:</span> <span class="pre">int</span> <span class="pre">=</span> <span class="pre">2</span></em>, <em class="sig-param"><span class="pre">master_name:</span> <span class="pre">Optional[str]</span> <span class="pre">=</span> <span class="pre">None</span></em>, <em class="sig-param"><span class="pre">port:</span> <span class="pre">Optional[int]</span> <span class="pre">=</span> <span class="pre">None</span></em>, <em class="sig-param"><span class="pre">filepath:</span> <span class="pre">str</span> <span class="pre">=</span> <span class="pre">'.'</span></em>, <em class="sig-param"><span class="pre">events_total:</span> <span class="pre">Optional[int]</span> <span class="pre">=</span> <span class="pre">None</span></em>, <em class="sig-param"><span class="pre">x509_proxy:</span> <span class="pre">Optional[str]</span> <span class="pre">=</span> <span class="pre">None</span></em>, <em class="sig-param"><span class="pre">verbose:</span> <span class="pre">bool</span> <span class="pre">=</span> <span class="pre">False</span></em>, <em class="sig-param"><span class="pre">print_stdout:</span> <span class="pre">bool</span> <span class="pre">=</span> <span class="pre">False</span></em>, <em class="sig-param"><span class="pre">bar_format:</span> <span class="pre">str</span> <span class="pre">=</span> <span class="pre">'{desc:&lt;14}{percentage:3.0f}%|{bar}{r_bar:&lt;55}'</span></em>, <em class="sig-param"><span class="pre">debug_log:</span> <span class="pre">Optional[str]</span> <span class="pre">=</span> <span class="pre">None</span></em>, <em class="sig-param"><span class="pre">stats_log:</span> <span class="pre">Optional[str]</span> <span class="pre">=</span> <span class="pre">None</span></em>, <em class="sig-param"><span class="pre">transactions_log:</span> <span class="pre">Optional[str]</span> <span class="pre">=</span> <span class="pre">None</span></em>, <em class="sig-param"><span class="pre">password_file:</span> <span class="pre">Optional[str]</span> <span class="pre">=</span> <span class="pre">None</span></em>, <em class="sig-param"><span class="pre">environment_file:</span> <span class="pre">Optional[str]</span> <span class="pre">=</span> <span class="pre">None</span></em>, <em class="sig-param"><span class="pre">extra_input_files:</span> <span class="pre">List</span> <span class="pre">=</span> <span class="pre">&lt;factory&gt;</span></em>, <em class="sig-param"><span class="pre">wrapper:</span> <span class="pre">Optional[str]</span> <span class="pre">=</span> <span class="pre">None</span></em>, <em class="sig-param"><span class="pre">resource_monitor:</span> <span class="pre">bool</span> <span class="pre">=</span> <span class="pre">False</span></em>, <em class="sig-param"><span class="pre">resources_mode:</span> <span class="pre">str</span> <span class="pre">=</span> <span class="pre">'fixed'</span></em>, <em class="sig-param"><span class="pre">fast_terminate_workers:</span> <span class="pre">Optional[int]</span> <span class="pre">=</span> <span class="pre">None</span></em>, <em class="sig-param"><span class="pre">cores:</span> <span class="pre">Optional[int]</span> <span class="pre">=</span> <span class="pre">None</span></em>, <em class="sig-param"><span class="pre">memory:</span> <span class="pre">Optional[int]</span> <span class="pre">=</span> <span class="pre">None</span></em>, <em class="sig-param"><span class="pre">disk:</span> <span class="pre">Optional[int]</span> <span class="pre">=</span> <span class="pre">None</span></em>, <em class="sig-param"><span class="pre">gpus:</span> <span class="pre">Optional[int]</span> <span class="pre">=</span> <span class="pre">None</span></em>, <em class="sig-param"><span class="pre">chunks_per_accum:</span> <span class="pre">int</span> <span class="pre">=</span> <span class="pre">10</span></em>, <em class="sig-param"><span class="pre">chunks_accum_in_mem:</span> <span class="pre">int</span> <span class="pre">=</span> <span class="pre">2</span></em>, <em class="sig-param"><span class="pre">chunksize:</span> <span class="pre">int</span> <span class="pre">=</span> <span class="pre">1024</span></em>, <em class="sig-param"><span class="pre">dynamic_chunksize:</span> <span class="pre">Optional[Dict]</span> <span class="pre">=</span> <span class="pre">None</span></em>, <em class="sig-param"><span class="pre">custom_init:</span> <span class="pre">Optional[Callable]</span> <span class="pre">=</span> <span class="pre">None</span></em><span class="sig-paren">)</span><a class="reference external" href="http://github.com/CoffeaTeam/coffea/blob/12f3621a920bf5b30bec52dc0c0d62cac92db479/coffea/processor/executor.py#L281"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#coffea.processor.WorkQueueExecutor" title="Permalink to this definition"></a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">coffea.processor.executor.ExecutorBase</span></code></p>
+<p>Execute using Work Queue</p>
+<p>For more information, see <a class="reference internal" href="../wq.html#intro-coffea-wq"><span class="std std-ref">Work Queue Executor</span></a></p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>items</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#list" title="(in Python v3.9)"><em>list</em></a><em> or </em><em>generator</em>) – Sequence of input arguments</p></li>
+<li><p><strong>function</strong> (<em>callable</em>) – A function to be called on each input, which returns an accumulator instance</p></li>
+<li><p><strong>accumulator</strong> (<em>Accumulatable</em>) – An accumulator to collect the output of the function</p></li>
+<li><p><strong>status</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.9)"><em>bool</em></a>) – If true (default), enable progress bar</p></li>
+<li><p><strong>unit</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.9)"><em>str</em></a>) – Label of progress bar unit</p></li>
+<li><p><strong>desc</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.9)"><em>str</em></a>) – Label of progress bar description</p></li>
+<li><p><strong>compression</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.9)"><em>int</em></a><em>, </em><em>optional</em>) – Compress accumulator outputs in flight with LZ4, at level specified (default 9)
+Set to <code class="docutils literal notranslate"><span class="pre">None</span></code> for no compression.</p></li>
+<li><p><strong>options</strong> (<em># work queue specific</em>) – </p></li>
+<li><p><strong>cores</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.9)"><em>int</em></a>) – Number of cores for work queue task. If unset, use a whole worker.</p></li>
+<li><p><strong>memory</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.9)"><em>int</em></a>) – Amount of memory (in MB) for work queue task. If unset, use a whole worker.</p></li>
+<li><p><strong>disk</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.9)"><em>int</em></a>) – Amount of disk space (in MB) for work queue task. If unset, use a whole worker.</p></li>
+<li><p><strong>gpus</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.9)"><em>int</em></a>) – Number of GPUs to allocate to each task.  If unset, use zero.</p></li>
+<li><p><strong>resources_mode</strong> (<em>one of 'fixed'</em><em>, or </em><em>'auto'. Default is 'fixed'.</em>) – <ul>
+<li><p>‘fixed’: allocate cores, memory, and disk specified for each task.</p></li>
+<li><dl class="simple">
+<dt>’auto’: use cores, memory, and disk as maximum values to allocate.</dt><dd><p>Useful when the resources used by a task are not known, as
+it lets work queue find an efficient value for maximum
+throughput.</p>
+</dd>
+</dl>
+</li>
+</ul>
+</p></li>
+<li><p><strong>resource_monitor</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.9)"><em>bool</em></a>) – If true, (false is the default) turns on resource monitoring for Work Queue.</p></li>
+<li><p><strong>fast_terminate_workers</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.9)"><em>int</em></a>) – Terminate workers on which tasks have been running longer than average.
+The time limit is computed by multiplying the average runtime of tasks
+by the value of ‘fast_terminate_workers’. Since there are
+legitimately slow tasks, no task may trigger fast termination in
+two distinct workers. Less than 1 disables it.</p></li>
+<li><p><strong>master_name</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.9)"><em>str</em></a>) – Name to refer to this work queue master.
+Sets port to 0 (any available port) if port not given.</p></li>
+<li><p><strong>port</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.9)"><em>int</em></a>) – Port number for work queue master program. Defaults to 9123 if
+master_name not given.</p></li>
+<li><p><strong>password_file</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.9)"><em>str</em></a>) – Location of a file containing a password used to authenticate workers.</p></li>
+<li><p><strong>extra_input_files</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#list" title="(in Python v3.9)"><em>list</em></a>) – A list of files in the current working directory to send along with each task.
+Useful for small custom libraries and configuration files needed by the processor.</p></li>
+<li><p><strong>x509_proxy</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.9)"><em>str</em></a>) – Path to the X509 user proxy. If None (the default), use the value of the
+environment variable X509_USER_PROXY, or fallback to the file /tmp/x509up_u${UID} if
+exists.  If False, disables the default behavior and no proxy is sent.</p></li>
+<li><p><strong>environment_file</strong> (<em>optional</em><em>, </em><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.9)"><em>str</em></a>) – Conda python environment tarball to use. If not given, assume that
+the python environment is already setup at the execution site.</p></li>
+<li><p><strong>wrapper</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.9)"><em>str</em></a>) – Wrapper script to run/open python environment tarball. Defaults to python_package_run found in PATH.</p></li>
+<li><p><strong>chunks_per_accum</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.9)"><em>int</em></a>) – Number of processed chunks per accumulation task. Defaults is 10.</p></li>
+<li><p><strong>chunks_accum_in_mem</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.9)"><em>int</em></a>) – Maximum number of chunks to keep in memory at each accumulation step in an accumulation task. Default is 2.</p></li>
+<li><p><strong>verbose</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.9)"><em>bool</em></a>) – If true, emit a message on each task submission and completion.
+Default is false.</p></li>
+<li><p><strong>debug_log</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.9)"><em>str</em></a>) – Filename for debug output</p></li>
+<li><p><strong>stats_log</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.9)"><em>str</em></a>) – Filename for tasks statistics output</p></li>
+<li><p><strong>transactions_log</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.9)"><em>str</em></a>) – Filename for tasks lifetime reports output</p></li>
+<li><p><strong>print_stdout</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.9)"><em>bool</em></a>) – If true (default), print the standard output of work queue task on completion.</p></li>
+<li><p><strong>custom_init</strong> (<em>function</em><em>, </em><em>optional</em>) – A function that takes as an argument the queue’s WorkQueue object.
+The function is called just before the first work unit is submitted
+to the queue.</p></li>
+</ul>
+</dd>
+</dl>
+<p class="rubric">Attributes Summary</p>
+<table class="longtable docutils align-default">
+<colgroup>
+<col style="width: 10%" />
+<col style="width: 90%" />
+</colgroup>
+<tbody>
+<tr class="row-odd"><td><p><a class="reference internal" href="#coffea.processor.WorkQueueExecutor.bar_format" title="coffea.processor.WorkQueueExecutor.bar_format"><code class="xref py py-obj docutils literal notranslate"><span class="pre">bar_format</span></code></a></p></td>
+<td><p></p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#coffea.processor.WorkQueueExecutor.chunks_accum_in_mem" title="coffea.processor.WorkQueueExecutor.chunks_accum_in_mem"><code class="xref py py-obj docutils literal notranslate"><span class="pre">chunks_accum_in_mem</span></code></a></p></td>
+<td><p></p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#coffea.processor.WorkQueueExecutor.chunks_per_accum" title="coffea.processor.WorkQueueExecutor.chunks_per_accum"><code class="xref py py-obj docutils literal notranslate"><span class="pre">chunks_per_accum</span></code></a></p></td>
+<td><p></p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#coffea.processor.WorkQueueExecutor.chunksize" title="coffea.processor.WorkQueueExecutor.chunksize"><code class="xref py py-obj docutils literal notranslate"><span class="pre">chunksize</span></code></a></p></td>
+<td><p></p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#coffea.processor.WorkQueueExecutor.compression" title="coffea.processor.WorkQueueExecutor.compression"><code class="xref py py-obj docutils literal notranslate"><span class="pre">compression</span></code></a></p></td>
+<td><p></p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#coffea.processor.WorkQueueExecutor.cores" title="coffea.processor.WorkQueueExecutor.cores"><code class="xref py py-obj docutils literal notranslate"><span class="pre">cores</span></code></a></p></td>
+<td><p></p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#coffea.processor.WorkQueueExecutor.custom_init" title="coffea.processor.WorkQueueExecutor.custom_init"><code class="xref py py-obj docutils literal notranslate"><span class="pre">custom_init</span></code></a></p></td>
+<td><p></p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#coffea.processor.WorkQueueExecutor.debug_log" title="coffea.processor.WorkQueueExecutor.debug_log"><code class="xref py py-obj docutils literal notranslate"><span class="pre">debug_log</span></code></a></p></td>
+<td><p></p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#coffea.processor.WorkQueueExecutor.disk" title="coffea.processor.WorkQueueExecutor.disk"><code class="xref py py-obj docutils literal notranslate"><span class="pre">disk</span></code></a></p></td>
+<td><p></p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#coffea.processor.WorkQueueExecutor.dynamic_chunksize" title="coffea.processor.WorkQueueExecutor.dynamic_chunksize"><code class="xref py py-obj docutils literal notranslate"><span class="pre">dynamic_chunksize</span></code></a></p></td>
+<td><p></p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#coffea.processor.WorkQueueExecutor.environment_file" title="coffea.processor.WorkQueueExecutor.environment_file"><code class="xref py py-obj docutils literal notranslate"><span class="pre">environment_file</span></code></a></p></td>
+<td><p></p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#coffea.processor.WorkQueueExecutor.events_total" title="coffea.processor.WorkQueueExecutor.events_total"><code class="xref py py-obj docutils literal notranslate"><span class="pre">events_total</span></code></a></p></td>
+<td><p></p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#coffea.processor.WorkQueueExecutor.fast_terminate_workers" title="coffea.processor.WorkQueueExecutor.fast_terminate_workers"><code class="xref py py-obj docutils literal notranslate"><span class="pre">fast_terminate_workers</span></code></a></p></td>
+<td><p></p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#coffea.processor.WorkQueueExecutor.filepath" title="coffea.processor.WorkQueueExecutor.filepath"><code class="xref py py-obj docutils literal notranslate"><span class="pre">filepath</span></code></a></p></td>
+<td><p></p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#coffea.processor.WorkQueueExecutor.gpus" title="coffea.processor.WorkQueueExecutor.gpus"><code class="xref py py-obj docutils literal notranslate"><span class="pre">gpus</span></code></a></p></td>
+<td><p></p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#coffea.processor.WorkQueueExecutor.master_name" title="coffea.processor.WorkQueueExecutor.master_name"><code class="xref py py-obj docutils literal notranslate"><span class="pre">master_name</span></code></a></p></td>
+<td><p></p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#coffea.processor.WorkQueueExecutor.memory" title="coffea.processor.WorkQueueExecutor.memory"><code class="xref py py-obj docutils literal notranslate"><span class="pre">memory</span></code></a></p></td>
+<td><p></p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#coffea.processor.WorkQueueExecutor.password_file" title="coffea.processor.WorkQueueExecutor.password_file"><code class="xref py py-obj docutils literal notranslate"><span class="pre">password_file</span></code></a></p></td>
+<td><p></p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#coffea.processor.WorkQueueExecutor.port" title="coffea.processor.WorkQueueExecutor.port"><code class="xref py py-obj docutils literal notranslate"><span class="pre">port</span></code></a></p></td>
+<td><p></p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#coffea.processor.WorkQueueExecutor.print_stdout" title="coffea.processor.WorkQueueExecutor.print_stdout"><code class="xref py py-obj docutils literal notranslate"><span class="pre">print_stdout</span></code></a></p></td>
+<td><p></p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#coffea.processor.WorkQueueExecutor.resource_monitor" title="coffea.processor.WorkQueueExecutor.resource_monitor"><code class="xref py py-obj docutils literal notranslate"><span class="pre">resource_monitor</span></code></a></p></td>
+<td><p></p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#coffea.processor.WorkQueueExecutor.resources_mode" title="coffea.processor.WorkQueueExecutor.resources_mode"><code class="xref py py-obj docutils literal notranslate"><span class="pre">resources_mode</span></code></a></p></td>
+<td><p></p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#coffea.processor.WorkQueueExecutor.retries" title="coffea.processor.WorkQueueExecutor.retries"><code class="xref py py-obj docutils literal notranslate"><span class="pre">retries</span></code></a></p></td>
+<td><p></p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#coffea.processor.WorkQueueExecutor.stats_log" title="coffea.processor.WorkQueueExecutor.stats_log"><code class="xref py py-obj docutils literal notranslate"><span class="pre">stats_log</span></code></a></p></td>
+<td><p></p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#coffea.processor.WorkQueueExecutor.transactions_log" title="coffea.processor.WorkQueueExecutor.transactions_log"><code class="xref py py-obj docutils literal notranslate"><span class="pre">transactions_log</span></code></a></p></td>
+<td><p></p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#coffea.processor.WorkQueueExecutor.verbose" title="coffea.processor.WorkQueueExecutor.verbose"><code class="xref py py-obj docutils literal notranslate"><span class="pre">verbose</span></code></a></p></td>
+<td><p></p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#coffea.processor.WorkQueueExecutor.wrapper" title="coffea.processor.WorkQueueExecutor.wrapper"><code class="xref py py-obj docutils literal notranslate"><span class="pre">wrapper</span></code></a></p></td>
+<td><p></p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#coffea.processor.WorkQueueExecutor.x509_proxy" title="coffea.processor.WorkQueueExecutor.x509_proxy"><code class="xref py py-obj docutils literal notranslate"><span class="pre">x509_proxy</span></code></a></p></td>
+<td><p></p></td>
+</tr>
+</tbody>
+</table>
+<p class="rubric">Methods Summary</p>
+<table class="longtable docutils align-default">
+<colgroup>
+<col style="width: 10%" />
+<col style="width: 90%" />
+</colgroup>
+<tbody>
+<tr class="row-odd"><td><p><a class="reference internal" href="#coffea.processor.WorkQueueExecutor.__call__" title="coffea.processor.WorkQueueExecutor.__call__"><code class="xref py py-obj docutils literal notranslate"><span class="pre">__call__</span></code></a>(items, function, accumulator)</p></td>
+<td><p>Call self as a function.</p></td>
+</tr>
+</tbody>
+</table>
+<p class="rubric">Attributes Documentation</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="coffea.processor.WorkQueueExecutor.bar_format">
+<span class="sig-name descname"><span class="pre">bar_format</span></span><em class="property"><span class="pre">:</span> <a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.9)"><span class="pre">str</span></a></em><em class="property"> <span class="pre">=</span> <span class="pre">'{desc:&lt;14}{percentage:3.0f}%|{bar}{r_bar:&lt;55}'</span></em><a class="headerlink" href="#coffea.processor.WorkQueueExecutor.bar_format" title="Permalink to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="coffea.processor.WorkQueueExecutor.chunks_accum_in_mem">
+<span class="sig-name descname"><span class="pre">chunks_accum_in_mem</span></span><em class="property"><span class="pre">:</span> <a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.9)"><span class="pre">int</span></a></em><em class="property"> <span class="pre">=</span> <span class="pre">2</span></em><a class="headerlink" href="#coffea.processor.WorkQueueExecutor.chunks_accum_in_mem" title="Permalink to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="coffea.processor.WorkQueueExecutor.chunks_per_accum">
+<span class="sig-name descname"><span class="pre">chunks_per_accum</span></span><em class="property"><span class="pre">:</span> <a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.9)"><span class="pre">int</span></a></em><em class="property"> <span class="pre">=</span> <span class="pre">10</span></em><a class="headerlink" href="#coffea.processor.WorkQueueExecutor.chunks_per_accum" title="Permalink to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="coffea.processor.WorkQueueExecutor.chunksize">
+<span class="sig-name descname"><span class="pre">chunksize</span></span><em class="property"><span class="pre">:</span> <a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.9)"><span class="pre">int</span></a></em><em class="property"> <span class="pre">=</span> <span class="pre">1024</span></em><a class="headerlink" href="#coffea.processor.WorkQueueExecutor.chunksize" title="Permalink to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="coffea.processor.WorkQueueExecutor.compression">
+<span class="sig-name descname"><span class="pre">compression</span></span><em class="property"><span class="pre">:</span> <span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.9)"><span class="pre">int</span></a><span class="p"><span class="pre">]</span></span></em><em class="property"> <span class="pre">=</span> <span class="pre">9</span></em><a class="headerlink" href="#coffea.processor.WorkQueueExecutor.compression" title="Permalink to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="coffea.processor.WorkQueueExecutor.cores">
+<span class="sig-name descname"><span class="pre">cores</span></span><em class="property"><span class="pre">:</span> <span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.9)"><span class="pre">int</span></a><span class="p"><span class="pre">]</span></span></em><em class="property"> <span class="pre">=</span> <span class="pre">None</span></em><a class="headerlink" href="#coffea.processor.WorkQueueExecutor.cores" title="Permalink to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="coffea.processor.WorkQueueExecutor.custom_init">
+<span class="sig-name descname"><span class="pre">custom_init</span></span><em class="property"><span class="pre">:</span> <span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><span class="pre">Callable</span><span class="p"><span class="pre">]</span></span></em><em class="property"> <span class="pre">=</span> <span class="pre">None</span></em><a class="headerlink" href="#coffea.processor.WorkQueueExecutor.custom_init" title="Permalink to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="coffea.processor.WorkQueueExecutor.debug_log">
+<span class="sig-name descname"><span class="pre">debug_log</span></span><em class="property"><span class="pre">:</span> <span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.9)"><span class="pre">str</span></a><span class="p"><span class="pre">]</span></span></em><em class="property"> <span class="pre">=</span> <span class="pre">None</span></em><a class="headerlink" href="#coffea.processor.WorkQueueExecutor.debug_log" title="Permalink to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="coffea.processor.WorkQueueExecutor.disk">
+<span class="sig-name descname"><span class="pre">disk</span></span><em class="property"><span class="pre">:</span> <span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.9)"><span class="pre">int</span></a><span class="p"><span class="pre">]</span></span></em><em class="property"> <span class="pre">=</span> <span class="pre">None</span></em><a class="headerlink" href="#coffea.processor.WorkQueueExecutor.disk" title="Permalink to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="coffea.processor.WorkQueueExecutor.dynamic_chunksize">
+<span class="sig-name descname"><span class="pre">dynamic_chunksize</span></span><em class="property"><span class="pre">:</span> <span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><span class="pre">Dict</span><span class="p"><span class="pre">]</span></span></em><em class="property"> <span class="pre">=</span> <span class="pre">None</span></em><a class="headerlink" href="#coffea.processor.WorkQueueExecutor.dynamic_chunksize" title="Permalink to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="coffea.processor.WorkQueueExecutor.environment_file">
+<span class="sig-name descname"><span class="pre">environment_file</span></span><em class="property"><span class="pre">:</span> <span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.9)"><span class="pre">str</span></a><span class="p"><span class="pre">]</span></span></em><em class="property"> <span class="pre">=</span> <span class="pre">None</span></em><a class="headerlink" href="#coffea.processor.WorkQueueExecutor.environment_file" title="Permalink to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="coffea.processor.WorkQueueExecutor.events_total">
+<span class="sig-name descname"><span class="pre">events_total</span></span><em class="property"><span class="pre">:</span> <span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.9)"><span class="pre">int</span></a><span class="p"><span class="pre">]</span></span></em><em class="property"> <span class="pre">=</span> <span class="pre">None</span></em><a class="headerlink" href="#coffea.processor.WorkQueueExecutor.events_total" title="Permalink to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="coffea.processor.WorkQueueExecutor.fast_terminate_workers">
+<span class="sig-name descname"><span class="pre">fast_terminate_workers</span></span><em class="property"><span class="pre">:</span> <span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.9)"><span class="pre">int</span></a><span class="p"><span class="pre">]</span></span></em><em class="property"> <span class="pre">=</span> <span class="pre">None</span></em><a class="headerlink" href="#coffea.processor.WorkQueueExecutor.fast_terminate_workers" title="Permalink to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="coffea.processor.WorkQueueExecutor.filepath">
+<span class="sig-name descname"><span class="pre">filepath</span></span><em class="property"><span class="pre">:</span> <a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.9)"><span class="pre">str</span></a></em><em class="property"> <span class="pre">=</span> <span class="pre">'.'</span></em><a class="headerlink" href="#coffea.processor.WorkQueueExecutor.filepath" title="Permalink to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="coffea.processor.WorkQueueExecutor.gpus">
+<span class="sig-name descname"><span class="pre">gpus</span></span><em class="property"><span class="pre">:</span> <span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.9)"><span class="pre">int</span></a><span class="p"><span class="pre">]</span></span></em><em class="property"> <span class="pre">=</span> <span class="pre">None</span></em><a class="headerlink" href="#coffea.processor.WorkQueueExecutor.gpus" title="Permalink to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="coffea.processor.WorkQueueExecutor.master_name">
+<span class="sig-name descname"><span class="pre">master_name</span></span><em class="property"><span class="pre">:</span> <span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.9)"><span class="pre">str</span></a><span class="p"><span class="pre">]</span></span></em><em class="property"> <span class="pre">=</span> <span class="pre">None</span></em><a class="headerlink" href="#coffea.processor.WorkQueueExecutor.master_name" title="Permalink to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="coffea.processor.WorkQueueExecutor.memory">
+<span class="sig-name descname"><span class="pre">memory</span></span><em class="property"><span class="pre">:</span> <span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.9)"><span class="pre">int</span></a><span class="p"><span class="pre">]</span></span></em><em class="property"> <span class="pre">=</span> <span class="pre">None</span></em><a class="headerlink" href="#coffea.processor.WorkQueueExecutor.memory" title="Permalink to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="coffea.processor.WorkQueueExecutor.password_file">
+<span class="sig-name descname"><span class="pre">password_file</span></span><em class="property"><span class="pre">:</span> <span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.9)"><span class="pre">str</span></a><span class="p"><span class="pre">]</span></span></em><em class="property"> <span class="pre">=</span> <span class="pre">None</span></em><a class="headerlink" href="#coffea.processor.WorkQueueExecutor.password_file" title="Permalink to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="coffea.processor.WorkQueueExecutor.port">
+<span class="sig-name descname"><span class="pre">port</span></span><em class="property"><span class="pre">:</span> <span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.9)"><span class="pre">int</span></a><span class="p"><span class="pre">]</span></span></em><em class="property"> <span class="pre">=</span> <span class="pre">None</span></em><a class="headerlink" href="#coffea.processor.WorkQueueExecutor.port" title="Permalink to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="coffea.processor.WorkQueueExecutor.print_stdout">
+<span class="sig-name descname"><span class="pre">print_stdout</span></span><em class="property"><span class="pre">:</span> <a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.9)"><span class="pre">bool</span></a></em><em class="property"> <span class="pre">=</span> <span class="pre">False</span></em><a class="headerlink" href="#coffea.processor.WorkQueueExecutor.print_stdout" title="Permalink to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="coffea.processor.WorkQueueExecutor.resource_monitor">
+<span class="sig-name descname"><span class="pre">resource_monitor</span></span><em class="property"><span class="pre">:</span> <a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.9)"><span class="pre">bool</span></a></em><em class="property"> <span class="pre">=</span> <span class="pre">False</span></em><a class="headerlink" href="#coffea.processor.WorkQueueExecutor.resource_monitor" title="Permalink to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="coffea.processor.WorkQueueExecutor.resources_mode">
+<span class="sig-name descname"><span class="pre">resources_mode</span></span><em class="property"><span class="pre">:</span> <a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.9)"><span class="pre">str</span></a></em><em class="property"> <span class="pre">=</span> <span class="pre">'fixed'</span></em><a class="headerlink" href="#coffea.processor.WorkQueueExecutor.resources_mode" title="Permalink to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="coffea.processor.WorkQueueExecutor.retries">
+<span class="sig-name descname"><span class="pre">retries</span></span><em class="property"><span class="pre">:</span> <a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.9)"><span class="pre">int</span></a></em><em class="property"> <span class="pre">=</span> <span class="pre">2</span></em><a class="headerlink" href="#coffea.processor.WorkQueueExecutor.retries" title="Permalink to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="coffea.processor.WorkQueueExecutor.stats_log">
+<span class="sig-name descname"><span class="pre">stats_log</span></span><em class="property"><span class="pre">:</span> <span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.9)"><span class="pre">str</span></a><span class="p"><span class="pre">]</span></span></em><em class="property"> <span class="pre">=</span> <span class="pre">None</span></em><a class="headerlink" href="#coffea.processor.WorkQueueExecutor.stats_log" title="Permalink to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="coffea.processor.WorkQueueExecutor.transactions_log">
+<span class="sig-name descname"><span class="pre">transactions_log</span></span><em class="property"><span class="pre">:</span> <span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.9)"><span class="pre">str</span></a><span class="p"><span class="pre">]</span></span></em><em class="property"> <span class="pre">=</span> <span class="pre">None</span></em><a class="headerlink" href="#coffea.processor.WorkQueueExecutor.transactions_log" title="Permalink to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="coffea.processor.WorkQueueExecutor.verbose">
+<span class="sig-name descname"><span class="pre">verbose</span></span><em class="property"><span class="pre">:</span> <a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.9)"><span class="pre">bool</span></a></em><em class="property"> <span class="pre">=</span> <span class="pre">False</span></em><a class="headerlink" href="#coffea.processor.WorkQueueExecutor.verbose" title="Permalink to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="coffea.processor.WorkQueueExecutor.wrapper">
+<span class="sig-name descname"><span class="pre">wrapper</span></span><em class="property"><span class="pre">:</span> <span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.9)"><span class="pre">str</span></a><span class="p"><span class="pre">]</span></span></em><em class="property"> <span class="pre">=</span> <span class="pre">None</span></em><a class="headerlink" href="#coffea.processor.WorkQueueExecutor.wrapper" title="Permalink to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="coffea.processor.WorkQueueExecutor.x509_proxy">
+<span class="sig-name descname"><span class="pre">x509_proxy</span></span><em class="property"><span class="pre">:</span> <span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.9)"><span class="pre">str</span></a><span class="p"><span class="pre">]</span></span></em><em class="property"> <span class="pre">=</span> <span class="pre">None</span></em><a class="headerlink" href="#coffea.processor.WorkQueueExecutor.x509_proxy" title="Permalink to this definition"></a></dt>
+<dd></dd></dl>
+
+<p class="rubric">Methods Documentation</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="coffea.processor.WorkQueueExecutor.__call__">
+<span class="sig-name descname"><span class="pre">__call__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">items</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">Iterable</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">function</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">Callable</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">accumulator</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">Union</span><span class="p"><span class="pre">[</span></span><span class="pre">coffea.processor.accumulator.Addable</span><span class="p"><span class="pre">,</span> </span><a class="reference external" href="https://docs.python.org/3/library/collections.abc.html#collections.abc.MutableSet" title="(in Python v3.9)"><span class="pre">collections.abc.MutableSet</span></a><span class="p"><span class="pre">,</span> </span><a class="reference external" href="https://docs.python.org/3/library/collections.abc.html#collections.abc.MutableMapping" title="(in Python v3.9)"><span class="pre">collections.abc.MutableMapping</span></a><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span><a class="reference external" href="http://github.com/CoffeaTeam/coffea/blob/12f3621a920bf5b30bec52dc0c0d62cac92db479/coffea/processor/executor.py#L405"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#coffea.processor.WorkQueueExecutor.__call__" title="Permalink to this definition"></a></dt>
+<dd><p>Call self as a function.</p>
+</dd></dl>
+
+</dd></dl>
+
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="coffea.processor.ParslExecutor.html" class="btn btn-neutral float-left" title="ParslExecutor" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="coffea.processor.Runner.html" class="btn btn-neutral float-right" title="Runner" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2019, Fermi National Accelerator Laboratory.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>
