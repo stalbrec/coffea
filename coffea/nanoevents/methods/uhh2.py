@@ -12,7 +12,7 @@ behavior.update(candidate.behavior)
 
 class _NanoAODEvents(behavior["NanoEvents"]):
     def __repr__(self):
-        return f"<event {self.year}:{self.run}:{self.luminosityBlock}:{self.event}>"
+        return f"<event {bytearray(self.year).decode()}:{self.run}:{self.luminosityBlock}:{self.event}>"
 
 
 behavior["NanoEvents"] = _NanoAODEvents
