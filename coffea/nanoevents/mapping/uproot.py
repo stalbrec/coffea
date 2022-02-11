@@ -71,7 +71,8 @@ class UprootSourceMapping(BaseSourceMapping):
         branch_forms = {}
         for key, branch in tree.iteritems(**iteritems_options):
             if key in branch_forms:
-                warnings.warn(
+                if('tagdata' not in key): # for now hide this warning for the tagdata branches in UHH2 ntuples, since im aware of this by now...                    
+                    warnings.warn(
                     f"Found duplicate branch {key} in {tree}, taking first instance"
                 )
                 continue
