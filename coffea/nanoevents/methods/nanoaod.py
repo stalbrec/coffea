@@ -115,7 +115,7 @@ _set_repr_name("GenVisTau")
 
 
 @awkward.mixin_class(behavior)
-class Electron(candidate.PtEtaPhiMCandidate, base.NanoCollection):
+class Electron(candidate.PtEtaPhiMCandidate, base.NanoCollection, base.Systematic):
     """NanoAOD electron object"""
 
     FAIL = 0
@@ -167,7 +167,7 @@ _set_repr_name("Electron")
 
 
 @awkward.mixin_class(behavior)
-class Muon(candidate.PtEtaPhiMCandidate, base.NanoCollection):
+class Muon(candidate.PtEtaPhiMCandidate, base.NanoCollection, base.Systematic):
     """NanoAOD muon object"""
 
     @property
@@ -187,7 +187,7 @@ _set_repr_name("Muon")
 
 
 @awkward.mixin_class(behavior)
-class Tau(candidate.PtEtaPhiMCandidate, base.NanoCollection):
+class Tau(candidate.PtEtaPhiMCandidate, base.NanoCollection, base.Systematic):
     """NanoAOD tau object"""
 
     @property
@@ -203,7 +203,7 @@ _set_repr_name("Tau")
 
 
 @awkward.mixin_class(behavior)
-class Photon(candidate.PtEtaPhiMCandidate, base.NanoCollection):
+class Photon(candidate.PtEtaPhiMCandidate, base.NanoCollection, base.Systematic):
     """NanoAOD photon object"""
 
     LOOSE = 0
@@ -215,7 +215,7 @@ class Photon(candidate.PtEtaPhiMCandidate, base.NanoCollection):
 
     @property
     def mass(self):
-        return awkward.without_parameters(awkward.zeros_like(self.pt))
+        return 0.0 * self.pt
 
     @property
     def isLoose(self):
@@ -261,7 +261,7 @@ _set_repr_name("FsrPhoton")
 
 
 @awkward.mixin_class(behavior)
-class Jet(vector.PtEtaPhiMLorentzVector, base.NanoCollection):
+class Jet(vector.PtEtaPhiMLorentzVector, base.NanoCollection, base.Systematic):
     """NanoAOD narrow radius jet object"""
 
     LOOSE = 0
@@ -309,7 +309,7 @@ _set_repr_name("Jet")
 
 
 @awkward.mixin_class(behavior)
-class FatJet(vector.PtEtaPhiMLorentzVector, base.NanoCollection):
+class FatJet(vector.PtEtaPhiMLorentzVector, base.NanoCollection, base.Systematic):
     """NanoAOD large radius jet object"""
 
     LOOSE = 0
@@ -353,7 +353,7 @@ _set_repr_name("FatJet")
 
 
 @awkward.mixin_class(behavior)
-class MissingET(vector.PolarTwoVector, base.NanoCollection):
+class MissingET(vector.PolarTwoVector, base.NanoCollection, base.Systematic):
     """NanoAOD Missing transverse energy object"""
 
     @property
@@ -389,6 +389,7 @@ class SecondaryVertex(Vertex):
                 "mass": self["mass"],
             },
             with_name="PtEtaPhiMLorentzVector",
+            behavior=self.behavior,
         )
 
 

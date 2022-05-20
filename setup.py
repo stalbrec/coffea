@@ -56,19 +56,21 @@ def get_description():
 
 
 INSTALL_REQUIRES = [
-    "awkward>=1.3.0",
-    "uproot>=4.1.3",
+    "awkward>=1.5.1,<2",
+    "uproot>=4.1.6",
     "uproot3-methods>=0.10.0",
     "uproot3>=3.14.1",
+    "correctionlib>=2.0.0",
     "pyarrow>=1.0.0",
     "fsspec",
     "matplotlib>=3",
     "numba>=0.50.0",
-    "numpy>=1.16.0",
+    "numpy>=1.16.0,<1.22",  # <1.22 for numba version restrictions with 1.55 series
     "scipy>=1.1.0",
     "tqdm>=4.27.0",
     "lz4",
     "cloudpickle>=1.2.3",
+    "toml>=0.10.2",
     "mplhep>=0.1.18",
     "packaging",
     "pandas",
@@ -89,7 +91,8 @@ EXTRAS_REQUIRE["dask"] = [
 EXTRAS_REQUIRE["servicex"] = [
     "aiostream",
     "tenacity",
-    "func-adl_servicex==1.1.2",
+    "servicex>=2.5.3",
+    "func-adl_servicex",
 ]
 EXTRAS_REQUIRE["dev"] = [
     "flake8",

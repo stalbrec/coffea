@@ -147,7 +147,7 @@ class NanoEventsFactory:
         schemaclass=NanoAODSchema,
         metadata=None,
         parquet_options={},
-        rados_parquet_options={},
+        skyhook_options={},
         access_log=None,
     ):
         """Quickly build NanoEvents from a parquet file
@@ -194,7 +194,9 @@ class NanoEventsFactory:
         if isinstance(file, ftypes):
             table_file = pyarrow.parquet.ParquetFile(file, **parquet_options)
         elif isinstance(file, str):
-            fs_file = fsspec.open(file, "rb")
+            fs_file = fsspec.open(
+                file, "rb"
+            ).open()  # Call open to materialize the file
             table_file = pyarrow.parquet.ParquetFile(fs_file, **parquet_options)
         elif isinstance(file, pyarrow.parquet.ParquetFile):
             table_file = file
@@ -221,14 +223,21 @@ class NanoEventsFactory:
         )
 
         format_ = "parquet"
-        if "ceph_config_path" in rados_parquet_options:
-            format_ = ds.RadosParquetFileFormat(
-                rados_parquet_options["ceph_config_path"].encode()
+        dataset = None
+        shim = None
+        if len(skyhook_options) > 0:
+            format_ = ds.SkyhookFileFormat(
+                "parquet",
+                skyhook_options["ceph_config_path"].encode(),
+                skyhook_options["ceph_data_pool"].encode(),
+            )
+            dataset = ds.dataset(file, schema=table_file.schema_arrow, format=format_)
+            shim = TrivialParquetOpener.UprootLikeShim(file, dataset)
+        else:
+            shim = TrivialParquetOpener.UprootLikeShim(
+                table_file, dataset, openfile=fs_file
             )
 
-        dataset = ds.dataset(file, schema=table_file.schema_arrow, format=format_)
-
-        shim = TrivialParquetOpener.UprootLikeShim(file, dataset)
         mapping.preload_column_source(partition_key[0], partition_key[1], shim)
 
         base_form = mapping._extract_base_form(table_file.schema_arrow)

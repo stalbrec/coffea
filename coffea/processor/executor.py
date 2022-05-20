@@ -2,29 +2,43 @@ from __future__ import print_function, division
 import concurrent.futures
 from functools import partial
 from itertools import repeat
+import os
 import time
 import pickle
 import sys
 import math
 import json
 import cloudpickle
+import toml
 import uproot
 import uuid
 import warnings
+import traceback
 import shutil
-from tqdm.auto import tqdm
 from collections import defaultdict
 from cachetools import LRUCache
 import lz4.frame as lz4f
+from contextlib import ExitStack
 from .processor import ProcessorABC
 from .accumulator import accumulate, set_accumulator, Accumulatable
 from .dataframe import LazyDataFrame
 from ..nanoevents import NanoEventsFactory, schemas
-from ..util import _hash
+from ..util import _hash, _exception_chain, rich_bar
 
 from collections.abc import Mapping, MutableMapping
 from dataclasses import dataclass, field, asdict
-from typing import Iterable, Callable, Optional, List, Generator, Dict, Union
+from typing import (
+    Iterable,
+    Callable,
+    Optional,
+    List,
+    Set,
+    Generator,
+    Dict,
+    Union,
+    Tuple,
+    Awaitable,
+)
 
 
 try:
@@ -64,6 +78,9 @@ class FileMeta(object):
         self.filename = filename
         self.treename = treename
         self.metadata = metadata
+
+    def __str__(self):
+        return "FileMeta(%s:%s)" % (self.filename, self.treename)
 
     def __hash__(self):
         # As used to lookup metadata, no need for dataset
@@ -117,6 +134,7 @@ class FileMeta(object):
                     self.metadata["uuid"],
                     user_meta,
                 )
+            return target_chunksize
         else:
             n = max(round(self.metadata["numentries"] / target_chunksize), 1)
             actual_chunksize = math.ceil(self.metadata["numentries"] / n)
@@ -135,10 +153,22 @@ class FileMeta(object):
                 )
                 start = stop
                 if dynamic_chunksize and next_chunksize:
-                    actual_chunksize = next_chunksize
+                    n = max(
+                        math.ceil(
+                            (self.metadata["numentries"] - start) / next_chunksize
+                        ),
+                        1,
+                    )
+                    actual_chunksize = math.ceil(
+                        (self.metadata["numentries"] - start) / n
+                    )
+            if dynamic_chunksize and next_chunksize:
+                return next_chunksize
+            else:
+                return target_chunksize
 
 
-@dataclass(unsafe_hash=True)
+@dataclass(unsafe_hash=True, frozen=True)
 class WorkItem:
     dataset: str
     filename: str
@@ -146,20 +176,26 @@ class WorkItem:
     entrystart: int
     entrystop: int
     fileuuid: str
-    usermeta: Optional[Dict] = None
+    usermeta: Optional[Dict] = field(default=None, compare=False)
 
     def __len__(self) -> int:
         return self.entrystop - self.entrystart
 
 
 def _compress(item, compression):
-    return lz4f.compress(
-        pickle.dumps(item, protocol=_PICKLE_PROTOCOL), compression_level=compression
-    )
+    if item is None or compression is None:
+        return item
+    else:
+        return lz4f.compress(
+            pickle.dumps(item, protocol=_PICKLE_PROTOCOL), compression_level=compression
+        )
 
 
 def _decompress(item):
-    return pickle.loads(lz4f.decompress(item))
+    if isinstance(item, bytes):
+        return pickle.loads(lz4f.decompress(item))
+    else:
+        return item
 
 
 class _compression_wrapper(object):
@@ -193,7 +229,7 @@ class _reduce:
         return "reduce"
 
     def __call__(self, items):
-        items = list(items)
+        items = list(it for it in items if it is not None)
         if len(items) == 0:
             raise ValueError("Empty list provided to reduction")
         if self.compression is not None:
@@ -203,12 +239,54 @@ class _reduce:
         return accumulate(items)
 
 
-def _cancel(job):
-    try:
-        # this is not implemented with parsl AppFutures
-        job.cancel()
-    except NotImplementedError:
-        pass
+class _FuturesHolder:
+    def __init__(self, futures: Set[Awaitable], refresh=2):
+        self.futures = set(futures)
+        self.merges = set()
+        self.completed = set()
+        self.done = {"futures": 0, "merges": 0}
+        self.running = len(self.futures)
+        self.refresh = refresh
+
+    def update(self, refresh: int = None):
+        if refresh is None:
+            refresh = self.refresh
+        if self.futures:
+            completed, self.futures = concurrent.futures.wait(
+                self.futures,
+                timeout=refresh,
+                return_when=concurrent.futures.FIRST_COMPLETED,
+            )
+            self.completed.update(completed)
+            self.done["futures"] += len(completed)
+
+        if self.merges:
+            completed, self.merges = concurrent.futures.wait(
+                self.merges,
+                timeout=refresh,
+                return_when=concurrent.futures.FIRST_COMPLETED,
+            )
+            self.completed.update(completed)
+            self.done["merges"] += len(completed)
+        self.running = len(self.futures) + len(self.merges)
+
+    def add_merge(self, merges: Awaitable[Accumulatable]):
+        self.merges.add(merges)
+        self.running = len(self.futures) + len(self.merges)
+
+    def fetch(self, N: int) -> List[Accumulatable]:
+        _completed = [self.completed.pop() for _ in range(min(N, len(self.completed)))]
+        if all(_good_future(future) for future in _completed):
+            return [future.result() for future in _completed if _good_future(future)]
+        else:  # Make recoverable
+            good_futures = [future for future in _completed if _good_future(future)]
+            bad_futures = [future for future in _completed if not _good_future(future)]
+            self.completed.update(good_futures)
+            raise bad_futures[0].exception()
+
+
+def _good_future(future: Awaitable) -> bool:
+    return future.done() and not future.cancelled() and future.exception() is None
 
 
 def _futures_handler(futures, timeout):
@@ -235,9 +313,13 @@ def _futures_handler(futures, timeout):
                         yield done.pop().result()
                     except concurrent.futures.CancelledError:
                         pass
-            except KeyboardInterrupt:
+            except KeyboardInterrupt as e:
                 for job in futures:
-                    _cancel(job)
+                    try:
+                        job.cancel()
+                        # this is not implemented with parsl AppFutures
+                    except NotImplementedError:
+                        raise e from None
                 running = sum(job.running() for job in futures)
                 warnings.warn(
                     f"Early stop: cancelled {len(futures) - running} jobs, will wait for {running} running jobs to complete"
@@ -248,8 +330,11 @@ def _futures_handler(futures, timeout):
             warnings.warn(
                 f"Cancelling {running} running jobs (likely due to an exception)"
             )
-        while futures:
-            _cancel(futures.pop())
+        try:
+            while futures:
+                futures.pop().cancel()
+        except NotImplementedError:
+            pass
 
 
 @dataclass
@@ -275,6 +360,96 @@ class ExecutorBase:
         tmp = self.__dict__.copy()
         tmp.update(kwargs)
         return type(self)(**tmp)
+
+
+def _watcher(
+    FH: _FuturesHolder,
+    executor: ExecutorBase,
+    merge_fcn: Callable,
+    pool: Optional[Callable] = None,
+) -> Accumulatable:
+    with rich_bar() as progress:
+        p_id = progress.add_task(executor.desc, total=FH.running, unit=executor.unit)
+        desc_m = "Merging" if executor.merging else "Merging (local)"
+        p_idm = progress.add_task(desc_m, total=0, unit="merges")
+
+        merged = None
+        while FH.running > 0:
+            FH.update()
+            progress.update(p_id, completed=FH.done["futures"], refresh=True)
+
+            if executor.merging:  # Merge jobs
+                merge_size = executor._merge_size(len(FH.completed))
+                progress.update(p_idm, completed=FH.done["merges"])
+                while len(FH.completed) > 1:
+                    if FH.running > 0 and len(FH.completed) < executor.merging[1]:
+                        break
+                    batch = FH.fetch(merge_size)
+                    # Add debug for batch mem size? TODO with logging?
+                    if isinstance(executor, FuturesExecutor) and pool is not None:
+                        FH.add_merge(pool.submit(merge_fcn, batch))
+                    elif isinstance(executor, ParslExecutor):
+                        FH.add_merge(merge_fcn(batch))
+                    else:
+                        raise RuntimeError("Invalid executor")
+                    progress.update(
+                        p_idm,
+                        total=progress._tasks[p_idm].total + 1,
+                        refresh=True,
+                    )
+            else:  # Merge within process
+                batch = FH.fetch(len(FH.completed))
+                merged = _compress(
+                    accumulate(
+                        progress.track(
+                            map(_decompress, (c for c in batch)),
+                            task_id=p_idm,
+                            total=progress._tasks[p_idm].total + len(batch),
+                        ),
+                        _decompress(merged),
+                    ),
+                    executor.compression,
+                )
+        # Add checkpointing
+
+        if executor.merging:
+            progress.refresh()
+            merged = FH.completed.pop().result()
+        if len(FH.completed) > 0 or len(FH.futures) > 0 or len(FH.merges) > 0:
+            raise RuntimeError("Not all futures are added.")
+        return merged
+
+
+def _wait_for_merges(FH: _FuturesHolder, executor: ExecutorBase) -> Accumulatable:
+    with rich_bar() as progress:
+        if executor.merging:
+            to_finish = len(FH.merges)
+            p_id_w = progress.add_task(
+                "Waiting for merge jobs",
+                total=to_finish,
+                unit=executor.unit,
+            )
+            while len(FH.merges) > 0:
+                FH.update()
+                progress.update(
+                    p_id_w,
+                    completed=(to_finish - len(FH.merges)),
+                    refresh=True,
+                )
+
+        FH.update()
+        recovered = [future.result() for future in FH.completed if _good_future(future)]
+        p_id_m = progress.add_task("Merging finished jobs", unit="merges")
+        return _compress(
+            accumulate(
+                progress.track(
+                    map(_decompress, (c for c in recovered)),
+                    task_id=p_id_m,
+                    total=len(recovered),
+                )
+            ),
+            executor.compression,
+        )
 
 
 @dataclass
@@ -441,11 +616,14 @@ class WorkQueueExecutor(ExecutorBase):
         if self.x509_proxy is None:
             self.x509_proxy = _get_x509_proxy()
 
-        return work_queue_main(
-            items,
-            function,
-            accumulator,
-            **self.__dict__,
+        return (
+            work_queue_main(
+                items,
+                function,
+                accumulator,
+                **self.__dict__,
+            ),
+            0,
         )
 
 
@@ -481,15 +659,21 @@ class IterativeExecutor(ExecutorBase):
     ):
         if len(items) == 0:
             return accumulator
-        gen = tqdm(
-            items,
-            disable=not self.status,
-            unit=self.unit,
-            total=len(items),
-            desc=self.desc,
-        )
-        gen = map(function, gen)
-        return accumulate(gen, accumulator)
+        with rich_bar() as progress:
+            p_id = progress.add_task(
+                self.desc, total=len(items), unit=self.unit, disable=not self.status
+            )
+            return (
+                accumulate(
+                    progress.track(
+                        map(function, (c for c in items)),
+                        total=len(items),
+                        task_id=p_id,
+                    ),
+                    accumulator,
+                ),
+                0,
+            )
 
 
 @dataclass
@@ -511,21 +695,66 @@ class FuturesExecutor(ExecutorBase):
             Number of parallel processes for futures (default 1)
         status : bool, optional
             If true (default), enable progress bar
-        unit : str, optional
-            Label of progress bar unit (default: 'Processing')
         desc : str, optional
-            Label of progress bar description (default: 'items')
+            Label of progress description (default: 'Processing')
+        unit : str, optional
+            Label of progress bar bar unit (default: 'items')
         compression : int, optional
             Compress accumulator outputs in flight with LZ4, at level specified (default 1)
             Set to ``None`` for no compression.
+        recoverable : bool, optional
+            Instead of raising Exception right away, the exception is captured and returned
+            up for custom parsing. Already completed items will be returned as well.
+        checkpoints : bool
+            To do
+        merging : bool | tuple(int, int, int), optional
+            Enables submitting intermediate merge jobs to the executor. Format is
+            (n_batches, min_batch_size, max_batch_size). Passing ``True`` will use default: (5, 4, 100),
+            aka as they are returned try to split completed jobs into 5 batches, but of at least 4 and at most 100 items.
+            Default is ``False`` - results get merged as they finish in the main process.
+        nparts : int, optional
+            Number of merge jobs to create at a time. Also pass via ``merging(X, ..., ...)''
+        minred : int, optional
+            Minimum number of items to merge in one job. Also pass via ``merging(..., X, ...)''
+        maxred : int, optional
+            maximum number of items to merge in one job. Also pass via ``merging(..., ..., X)''
+        mergepool : concurrent.futures.Executor class or instance | int, optional
+            Supply an additional executor to process merge jobs indepedently.
+            An ``int`` will be interpretted as ``ProcessPoolExecutor(max_workers=int)``.
         tailtimeout : int, optional
             Timeout requirement on job tails. Cancel all remaining jobs if none have finished
             in the timeout window.
     """
 
-    pool: Union[Callable[..., concurrent.futures.Executor], concurrent.futures.Executor] = concurrent.futures.ProcessPoolExecutor  # fmt: skip
+    pool: Union[
+        Callable[..., concurrent.futures.Executor], concurrent.futures.Executor
+    ] = concurrent.futures.ProcessPoolExecutor  # fmt: skip
+    mergepool: Optional[
+        Union[
+            Callable[..., concurrent.futures.Executor],
+            concurrent.futures.Executor,
+            bool,
+        ]
+    ] = None
+    recoverable: bool = False
+    merging: Union[bool, Tuple[int, int, int]] = False
     workers: int = 1
     tailtimeout: Optional[int] = None
+
+    def __post_init__(self):
+        if not (
+            isinstance(self.merging, bool)
+            or (isinstance(self.merging, tuple) and len(self.merging) == 3)
+        ):
+            raise ValueError(
+                f"merging={self.merging} not understood. Required format is "
+                "(n_batches, min_batch_size, max_batch_size)"
+            )
+        elif self.merging is True:
+            self.merging = (5, 4, 100)
+
+    def _merge_size(self, size: int):
+        return min(self.merging[2], max(size // self.merging[0] + 1, self.merging[1]))
 
     def __getstate__(self):
         return dict(self.__dict__, pool=None)
@@ -540,31 +769,48 @@ class FuturesExecutor(ExecutorBase):
             return accumulator
         if self.compression is not None:
             function = _compression_wrapper(self.compression, function)
+        reducer = _reduce(self.compression)
 
-        def processwith(pool):
-            gen = _futures_handler(
-                {pool.submit(function, item) for item in items}, self.tailtimeout
+        def _processwith(pool, mergepool):
+            FH = _FuturesHolder(
+                set(pool.submit(function, item) for item in items), refresh=2
             )
+
             try:
-                return accumulate(
-                    tqdm(
-                        gen if self.compression is None else map(_decompress, gen),
-                        disable=not self.status,
-                        unit=self.unit,
-                        total=len(items),
-                        desc=self.desc,
-                    ),
-                    accumulator,
-                )
-            finally:
-                gen.close()
+                if mergepool is None:
+                    merged = _watcher(FH, self, reducer, pool)
+                else:
+                    merged = _watcher(FH, self, reducer, mergepool)
+                return accumulate([_decompress(merged), accumulator]), 0
+
+            except Exception as e:
+                traceback.print_exc()
+                if self.recoverable:
+                    print("Exception occured, recovering progress...")
+                    for job in FH.futures:
+                        job.cancel()
+
+                    merged = _wait_for_merges(FH, self)
+                    return accumulate([_decompress(merged), accumulator]), e
+                else:
+
+                    raise e from None
 
         if isinstance(self.pool, concurrent.futures.Executor):
-            return processwith(pool=self.pool)
+            return _processwith(pool=self.pool, mergepool=self.mergepool)
         else:
             # assume its a class then
-            with self.pool(max_workers=self.workers) as poolinstance:
-                return processwith(pool=poolinstance)
+            with ExitStack() as stack:
+                poolinstance = stack.enter_context(self.pool(max_workers=self.workers))
+                if self.mergepool is not None:
+                    if isinstance(self.mergepool, int):
+                        self.mergepool = concurrent.futures.ProcessPoolExecutor(
+                            max_workers=self.mergepool
+                        )
+                    mergepoolinstance = stack.enter_context(self.mergepool)
+                else:
+                    mergepoolinstance = None
+                return _processwith(pool=poolinstance, mergepool=mergepoolinstance)
 
 
 @dataclass
@@ -627,6 +873,7 @@ class DaskExecutor(ExecutorBase):
 
         import dask.dataframe as dd
         from dask.distributed import Client
+        from distributed.scheduler import KilledWorker
 
         if self.client is None:
             self.client = Client(threads_per_worker=1)
@@ -652,6 +899,7 @@ class DaskExecutor(ExecutorBase):
                 )
 
         work = []
+        key_to_item = {}
         if self.worker_affinity:
             workers = list(self.client.run(lambda: 0))
 
@@ -664,20 +912,26 @@ class DaskExecutor(ExecutorBase):
                 return hashed % len(workers) == workerindex
 
             for workerindex, worker in enumerate(workers):
-                work.extend(
-                    self.client.map(
-                        function,
-                        [
-                            item
-                            for item in items
-                            if belongsto(self.heavy_input, workerindex, item)
-                        ],
-                        pure=(self.heavy_input is not None),
-                        priority=self.priority,
-                        retries=self.retries,
-                        workers={worker},
-                        allow_other_workers=False,
-                    )
+                items_worker = [
+                    item
+                    for item in items
+                    if belongsto(self.heavy_input, workerindex, item)
+                ]
+                work_worker = self.client.map(
+                    function,
+                    items_worker,
+                    pure=(self.heavy_input is not None),
+                    priority=self.priority,
+                    retries=self.retries,
+                    workers={worker},
+                    allow_other_workers=False,
+                )
+                work.extend(work_worker)
+                key_to_item.update(
+                    {
+                        future.key: item
+                        for future, item in zip(work_worker, items_worker)
+                    }
                 )
         else:
             work = self.client.map(
@@ -687,6 +941,7 @@ class DaskExecutor(ExecutorBase):
                 priority=self.priority,
                 retries=self.retries,
             )
+            key_to_item.update({future.key: item for future, item in zip(work, items)})
         if (self.function_name == "get_metadata") or not self.use_dataframes:
             while len(work) > 1:
                 work = self.client.map(
@@ -699,26 +954,38 @@ class DaskExecutor(ExecutorBase):
                     priority=self.priority,
                     retries=self.retries,
                 )
+                key_to_item.update({future.key: "(output reducer)" for future in work})
             work = work[0]
-            if self.status:
-                from distributed import progress
+            try:
+                if self.status:
+                    from distributed import progress
 
-                # FIXME: fancy widget doesn't appear, have to live with boring pbar
-                progress(work, multi=True, notebook=False)
-            return accumulate(
-                [
-                    work.result()
-                    if self.compression is None
-                    else _decompress(work.result())
-                ],
-                accumulator,
-            )
+                    # FIXME: fancy widget doesn't appear, have to live with boring pbar
+                    progress(work, multi=True, notebook=False)
+                return (
+                    accumulate(
+                        [
+                            work.result()
+                            if self.compression is None
+                            else _decompress(work.result())
+                        ],
+                        accumulator,
+                    ),
+                    0,
+                )
+            except KilledWorker as ex:
+                baditem = key_to_item[ex.task]
+                if self.heavy_input is not None and isinstance(baditem, tuple):
+                    baditem = baditem[0]
+                raise RuntimeError(
+                    f"Work item {baditem} caused a KilledWorker exception (likely a segfault or out-of-memory issue)"
+                )
         else:
             if self.status:
                 from distributed import progress
 
                 progress(work, multi=True, notebook=False)
-            return {"out": dd.from_delayed(work)}
+            return {"out": dd.from_delayed(work)}, 0
 
 
 @dataclass
@@ -746,6 +1013,20 @@ class ParslExecutor(ExecutorBase):
         compression : int, optional
             Compress accumulator outputs in flight with LZ4, at level specified (default 1)
             Set to ``None`` for no compression.
+        recoverable : bool, optional
+            Instead of raising Exception right away, the exception is captured and returned
+            up for custom parsing. Already completed items will be returned as well.
+        merging : bool | tuple(int, int, int), optional
+            Enables submitting intermediate merge jobs to the executor. Format is
+            (n_batches, min_batch_size, max_batch_size). Passing ``True`` will use default: (5, 4, 100),
+            aka as they are returned try to split completed jobs into 5 batches, but of at least 4 and at most 100 items.
+            Default is ``False`` - results get merged as they finish in the main process.
+        jobs_executors : list | "all" optional
+            Labels of the executors (from dfk.config.executors) that will process main jobs.
+            Default is 'all'. Recommended is ``['jobs']``, while passing ``label='jobs'`` to the primary executor.
+        merges_executors : list | "all" optional
+            Labels of the executors (from dfk.config.executors) that will process main jobs.
+            Default is 'all'. Recommended is ``['merges']``, while passing ``label='merges'`` to the executor dedicated towards merge jobs.
         tailtimeout : int, optional
             Timeout requirement on job tails. Cancel all remaining jobs if none have finished
             in the timeout window.
@@ -753,6 +1034,25 @@ class ParslExecutor(ExecutorBase):
 
     tailtimeout: Optional[int] = None
     config: Optional["parsl.config.Config"] = None  # noqa
+    recoverable: bool = False
+    merging: Optional[Union[bool, Tuple[int, int, int]]] = False
+    jobs_executors: Union[str, List] = "all"
+    merges_executors: Union[str, List] = "all"
+
+    def __post_init__(self):
+        if not (
+            isinstance(self.merging, bool)
+            or (isinstance(self.merging, tuple) and len(self.merging) == 3)
+        ):
+            raise ValueError(
+                f"merging={self.merging} not understood. Required format is "
+                "(n_batches, min_batch_size, max_batch_size)"
+            )
+        elif self.merging is True:
+            self.merging = (5, 4, 100)
+
+    def _merge_size(self, size: int):
+        return min(self.merging[2], max(size // self.merging[0] + 1, self.merging[1]))
 
     def __call__(
         self,
@@ -769,6 +1069,7 @@ class ParslExecutor(ExecutorBase):
         if self.compression is not None:
             function = _compression_wrapper(self.compression, function)
 
+        # Parse config if passed
         cleanup = False
         try:
             parsl.dfk()
@@ -785,28 +1086,45 @@ class ParslExecutor(ExecutorBase):
             parsl.clear()
             parsl.load(self.config)
 
-        app = timeout(python_app(function))
-
-        gen = _futures_handler(map(app, items), self.tailtimeout)
-        try:
-            accumulator = accumulate(
-                tqdm(
-                    gen if self.compression is None else map(_decompress, gen),
-                    disable=not self.status,
-                    unit=self.unit,
-                    total=len(items),
-                    desc=self.desc,
-                ),
-                accumulator,
+        # Check config/executors
+        _exec_avail = [exe.label for exe in parsl.dfk().config.executors]
+        _execs_tried = (
+            [] if self.jobs_executors == "all" else [e for e in self.jobs_executors]
+        )
+        _execs_tried += (
+            [] if self.merges_executors == "all" else [e for e in self.merges_executors]
+        )
+        if not all([_e in _exec_avail for _e in _execs_tried]):
+            raise RuntimeError(
+                f"Executors: [{','.join(_e for _e in _execs_tried if _e not in _exec_avail)}] not available in the config."
             )
+
+        # Apps
+        app = timeout(python_app(function, executors=self.jobs_executors))
+        reducer = timeout(
+            python_app(_reduce(self.compression), executors=self.merges_executors)
+        )
+
+        FH = _FuturesHolder(set(map(app, items)), refresh=2)
+        try:
+            merged = _watcher(FH, self, reducer)
+            return accumulate([_decompress(merged), accumulator]), 0
+
+        except Exception as e:
+            traceback.print_exc()
+            if self.recoverable:
+                print("Exception occured, recovering progress...")
+                # for job in FH.futures:  # NotImplemented in parsl
+                #     job.cancel()
+
+                merged = _wait_for_merges(FH, self)
+                return accumulate([_decompress(merged), accumulator]), e
+            else:
+                raise e from None
         finally:
-            gen.close()
-
-        if cleanup:
-            parsl.dfk().cleanup()
-            parsl.clear()
-
-        return accumulator
+            if cleanup:
+                parsl.dfk().cleanup()
+                parsl.clear()
 
 
 class ParquetFileContext:
@@ -864,15 +1182,27 @@ class Runner:
     metadata_cache: Optional[MutableMapping] = None
     dynamic_chunksize: Optional[Dict] = None
     skipbadfiles: bool = False
-    xrootdtimeout: Optional[int] = None
+    xrootdtimeout: Optional[int] = 60
     align_clusters: bool = False
     savemetrics: bool = False
     mmap: bool = False
     schema: Optional[schemas.BaseSchema] = schemas.BaseSchema
-    cachestrategy: Optional[Union[Literal["dask-worker"], Callable[..., MutableMapping]]] = None  # fmt: skip
+    cachestrategy: Optional[
+        Union[Literal["dask-worker"], Callable[..., MutableMapping]]
+    ] = None  # fmt: skip
     processor_compression: int = 1
-    ceph_config_path: Optional[str] = None
+    use_skyhook: Optional[bool] = False
+    skyhook_options: Optional[Dict] = field(default_factory=dict)
     format: str = "root"
+
+    @staticmethod
+    def read_coffea_config():
+        config_path = os.path.join(os.environ["HOME"], ".coffea.toml")
+        if os.path.exists(config_path):
+            with open(config_path) as f:
+                return toml.loads(f.read())
+        else:
+            return dict()
 
     def __post_init__(self):
         if self.pre_executor is None:
@@ -919,45 +1249,48 @@ class Runner:
         else:
             return False
 
-    @cached_property
-    def cache(self):
+    @staticmethod
+    def get_cache(cachestrategy):
         cache = None
-        if self.cachestrategy == "dask-worker":
+        if cachestrategy == "dask-worker":
             from distributed import get_worker
             from coffea.processor.dask import ColumnCache
 
-            assert isinstance(self.executor, DaskExecutor)
             worker = get_worker()
             try:
                 cache = worker.plugins[ColumnCache.name]
             except KeyError:
                 # emit warning if not found?
                 pass
-        elif callable(self.cachestrategy):
-            cache = self.cachestrategy()
+        elif callable(cachestrategy):
+            cache = cachestrategy()
         return cache
 
-    def automatic_retries(self, func, *args, **kwargs):
+    @staticmethod
+    def automatic_retries(retries: int, skipbadfiles: bool, func, *args, **kwargs):
         """This should probably defined on Executor-level."""
         import warnings
 
         retry_count = 0
-        while retry_count <= self.retries:
+        while retry_count <= retries:
             try:
                 return func(*args, **kwargs)
             # catch xrootd errors and optionally skip
             # or retry to read the file
             except Exception as e:
-                if self.skipbadfiles and isinstance(e, FileNotFoundError):
+                chain = _exception_chain(e)
+                if skipbadfiles and any(
+                    isinstance(c, FileNotFoundError) for c in chain
+                ):
                     warnings.warn(str(e))
                     break
                 if (
-                    not self.skipbadfiles
-                    or "Auth failed" in str(e)
-                    or self.retries == retry_count
+                    not skipbadfiles
+                    or any("Auth failed" in str(c) for c in chain)
+                    or retries == retry_count
                 ):
                     raise e
-                warnings.warn("Attempt %d of %d." % (retry_count + 1, self.retries + 1))
+                warnings.warn("Attempt %d of %d." % (retry_count + 1, retries + 1))
             retry_count += 1
 
     @staticmethod
@@ -1002,15 +1335,18 @@ class Runner:
             for filename in filelist:
                 yield FileMeta(dataset, filename, local_treename, user_meta)
 
-    def metadata_fetcher(self, item: FileMeta) -> Accumulatable:
+    @staticmethod
+    def metadata_fetcher(
+        xrootdtimeout: int, align_clusters: bool, item: FileMeta
+    ) -> Accumulatable:
         out = set_accumulator()
-        file = uproot.open(item.filename, timeout=self.xrootdtimeout)
+        file = uproot.open(item.filename, timeout=xrootdtimeout)
         tree = file[item.treename]
         metadata = {}
         if item.metadata:
             metadata.update(item.metadata)
         metadata.update({"numentries": tree.num_entries, "uuid": file.file.fUUID})
-        if self.align_clusters:
+        if align_clusters:
             metadata["clusters"] = tree.common_entry_offsets()
         out = set_accumulator(
             [FileMeta(item.dataset, item.filename, item.treename, metadata)]
@@ -1018,43 +1354,38 @@ class Runner:
         return out
 
     def _preprocess_fileset(self, fileset: Dict) -> None:
-        if self.maxchunks is None:
-            # this is a bit of an abuse of map-reduce but ok
-            to_get = set(
-                filemeta
-                for filemeta in fileset
-                if not filemeta.populated(clusters=self.align_clusters)
+        # this is a bit of an abuse of map-reduce but ok
+        to_get = set(
+            filemeta
+            for filemeta in fileset
+            if not filemeta.populated(clusters=self.align_clusters)
+        )
+        if len(to_get) > 0:
+            out = set_accumulator()
+            pre_arg_override = {
+                "function_name": "get_metadata",
+                "desc": "Preprocessing",
+                "unit": "file",
+                "compression": None,
+            }
+            if isinstance(self.pre_executor, (FuturesExecutor, ParslExecutor)):
+                pre_arg_override.update({"tailtimeout": None})
+            if isinstance(self.pre_executor, (DaskExecutor)):
+                self.pre_executor.heavy_input = None
+                pre_arg_override.update({"worker_affinity": False})
+            pre_executor = self.pre_executor.copy(**pre_arg_override)
+            closure = partial(
+                self.automatic_retries,
+                self.retries,
+                self.skipbadfiles,
+                partial(self.metadata_fetcher, self.xrootdtimeout, self.align_clusters),
             )
-            if len(to_get) > 0:
-                out = set_accumulator()
-                pre_arg_override = {
-                    "function_name": "get_metadata",
-                    "desc": "Preprocessing",
-                    "unit": "file",
-                    "compression": None,
-                }
-                if isinstance(self.pre_executor, (FuturesExecutor, ParslExecutor)):
-                    pre_arg_override.update({"tailtimeout": None})
-                if isinstance(self.pre_executor, (DaskExecutor)):
-                    pre_arg_override.update({"worker_affinity": False})
-                pre_executor = self.pre_executor.copy(**pre_arg_override)
-                closure = partial(self.automatic_retries, self.metadata_fetcher)
-                out = pre_executor(to_get, closure, out)
-                while out:
-                    item = out.pop()
-                    self.metadata_cache[item] = item.metadata
-                for filemeta in fileset:
-                    filemeta.maybe_populate(self.metadata_cache)
-        else:
+            out, _ = pre_executor(to_get, closure, out)
+            while out:
+                item = out.pop()
+                self.metadata_cache[item] = item.metadata
             for filemeta in fileset:
-                # not sure why need to check for bad files here... otherwise pop fails below with pytest.
-                # fmt: off
-                if self.skipbadfiles and not filemeta.populated(clusters=self.align_clusters):  # noqa  # fmt: skip <-- gets ignored, see: https://github.com/psf/black/issues/2421
-                    continue
-                # fmt: on
-                if not filemeta.populated(clusters=self.align_clusters):
-                    filemeta.metadata = self.metadata_fetcher(filemeta).pop().metadata
-                    self.metadata_cache[filemeta] = filemeta.metadata
+                filemeta.maybe_populate(self.metadata_cache)
 
     def _filter_badfiles(self, fileset: Dict) -> List:
         final_fileset = []
@@ -1066,11 +1397,13 @@ class Runner:
         return final_fileset
 
     def _chunk_generator(self, fileset: Dict, treename: str) -> Generator:
+        config = Runner.read_coffea_config()
         if self.format == "root":
             if self.maxchunks is None:
+                last_chunksize = self.chunksize
                 for filemeta in fileset:
-                    yield from filemeta.chunks(
-                        self.chunksize,
+                    last_chunksize = yield from filemeta.chunks(
+                        last_chunksize,
                         self.align_clusters,
                         self.dynamic_chunksize,
                     )
@@ -1090,6 +1423,10 @@ class Runner:
                             break
                 yield from iter(chunks)
         else:
+            if not config.get("skyhook", None):
+                print("No skyhook config found, using defaults")
+                config["skyhook"] = dict()
+
             import pyarrow.dataset as ds
 
             dataset_filelist_map = {}
@@ -1099,14 +1436,27 @@ class Runner:
             chunks = []
             for dataset, filelist in dataset_filelist_map.items():
                 for filename in filelist:
-                    # if in cephfs, encode the ceph config path in the filename
-                    if self.ceph_config_path:
-                        filename = f"{self.ceph_config_path}:{filename}"
+                    # If skyhook config is provided and is not empty,
+                    if self.use_skyhook:
+                        ceph_config_path = config["skyhook"].get(
+                            "ceph_config_path", "/etc/ceph/ceph.conf"
+                        )
+                        ceph_data_pool = config["skyhook"].get(
+                            "ceph_data_pool", "cephfs_data"
+                        )
+                        filename = f"{ceph_config_path}:{ceph_data_pool}:{filename}"
                     chunks.append(WorkItem(dataset, filename, treename, 0, 0, ""))
             yield from iter(chunks)
 
+    @staticmethod
     def _work_function(
-        self,
+        format: str,
+        xrootdtimeout: int,
+        mmap: bool,
+        schema: schemas.BaseSchema,
+        cache_function: Callable[[], MutableMapping],
+        use_dataframes: bool,
+        savemetrics: bool,
         item: WorkItem,
         processor_instance: ProcessorABC,
     ) -> Dict:
@@ -1115,15 +1465,15 @@ class Runner:
         if not isinstance(processor_instance, ProcessorABC):
             processor_instance = cloudpickle.loads(lz4f.decompress(processor_instance))
 
-        if self.format == "root":
+        if format == "root":
             filecontext = uproot.open(
                 item.filename,
-                timeout=self.xrootdtimeout,
+                timeout=xrootdtimeout,
                 file_handler=uproot.MemmapSource
-                if self.mmap
+                if mmap
                 else uproot.MultithreadedFileSource,
             )
-        elif self.format == "parquet":
+        elif format == "parquet":
             filecontext = ParquetFileContext(item.filename)
 
         metadata = {
@@ -1140,79 +1490,79 @@ class Runner:
             metadata.update(item.usermeta)
 
         with filecontext as file:
-            if self.schema is None:
+            if schema is None:
                 # To deprecate
                 tree = file[item.treename]
                 events = LazyDataFrame(
                     tree, item.entrystart, item.entrystop, metadata=metadata
                 )
-            elif issubclass(self.schema, schemas.BaseSchema):
+            elif issubclass(schema, schemas.BaseSchema):
                 # change here
-                if self.format == "root":
+                if format == "root":
                     materialized = []
                     factory = NanoEventsFactory.from_root(
                         file=file,
                         treepath=item.treename,
                         entry_start=item.entrystart,
                         entry_stop=item.entrystop,
-                        persistent_cache=self.cache,
-                        schemaclass=self.schema,
+                        persistent_cache=cache_function(),
+                        schemaclass=schema,
                         metadata=metadata,
                         access_log=materialized,
                     )
                     events = factory.events()
-                elif self.format == "parquet":
-                    rados_parquet_options = {}
+                elif format == "parquet":
+                    skyhook_options = {}
                     if ":" in item.filename:
-                        ceph_config_path, filename = item.filename.split(":")
+                        (
+                            ceph_config_path,
+                            ceph_data_pool,
+                            filename,
+                        ) = item.filename.split(":")
                         # patch back filename into item
                         item = WorkItem(**dict(asdict(item), filename=filename))
-                        rados_parquet_options["ceph_config_path"] = ceph_config_path
+                        skyhook_options["ceph_config_path"] = ceph_config_path
+                        skyhook_options["ceph_data_pool"] = ceph_data_pool
 
                     factory = NanoEventsFactory.from_parquet(
                         file=item.filename,
                         treepath=item.treename,
-                        schemaclass=self.schema,
+                        schemaclass=schema,
                         metadata=metadata,
-                        rados_parquet_options=rados_parquet_options,
+                        skyhook_options=skyhook_options,
                     )
                     events = factory.events()
             else:
                 raise ValueError(
                     "Expected schema to derive from nanoevents.BaseSchema, instead got %r"
-                    % self.schema
+                    % schema
                 )
             tic = time.time()
             try:
                 out = processor_instance.process(events)
             except Exception as e:
-                file_trace = f"\n\nFailed processing file: {item!r}"
-                raise type(e)(str(e) + file_trace).with_traceback(
-                    sys.exc_info()[2]
-                ) from None
+                raise Exception(f"Failed processing file: {item!r}") from e
             if out is None:
                 raise ValueError(
                     "Output of process() should not be None. Make sure your processor's process() function returns an accumulator."
                 )
             toc = time.time()
-            if self.use_dataframes:
+            if use_dataframes:
                 return out
             else:
-                if self.savemetrics:
+                if savemetrics:
                     metrics = {}
                     if isinstance(file, uproot.ReadOnlyDirectory):
                         metrics["bytesread"] = file.file.source.num_requested_bytes
-                    if self.schema is not None and issubclass(
-                        self.schema, schemas.BaseSchema
-                    ):
+                    if schema is not None and issubclass(schema, schemas.BaseSchema):
                         metrics["columns"] = set(materialized)
                         metrics["entries"] = len(events)
                     else:
                         metrics["columns"] = set(events.materialized)
                         metrics["entries"] = events.size
                     metrics["processtime"] = toc - tic
-                    return {"out": out, "metrics": metrics}
-                return {"out": out}
+                    return {"out": out, "metrics": metrics, "processed": set([item])}
+                return {"out": out, "processed": set([item])}
 
     def __call__(
         self,
@@ -1235,13 +1585,35 @@ class Runner:
                 An instance of a class deriving from ProcessorABC
         """
 
+        wrapped_out = self.run(fileset, processor_instance, treename)
+        if self.use_dataframes:
+            return wrapped_out  # not wrapped anymore
+        if self.savemetrics:
+            return wrapped_out["out"], wrapped_out["metrics"]
+        return wrapped_out["out"]
+
+    def preprocess(
+        self,
+        fileset: Dict,
+        treename: str,
+    ) -> Generator:
+        """Run the processor_instance on a given fileset
+
+        Parameters
+        ----------
+            fileset : dict
+                A dictionary ``{dataset: [file, file], }``
+                Optionally, if some files' tree name differ, the dictionary can be specified:
+                ``{dataset: {'treename': 'name', 'files': [file, file]}, }``
+            treename : str
+                name of tree inside each root file, can be ``None``;
+                treename can also be defined in fileset, which will override the passed treename
+        """
+
         if not isinstance(fileset, (Mapping, str)):
             raise ValueError(
                 "Expected fileset to be a mapping dataset: list(files) or filename"
             )
-        if not isinstance(processor_instance, ProcessorABC):
-            raise ValueError("Expected processor_instance to derive from ProcessorABC")
-
         if self.format == "root":
             fileset = list(self._normalize_fileset(fileset, treename))
             for filemeta in fileset:
@@ -1254,7 +1626,48 @@ class Runner:
             # v0.7.4. This fixes tests using maxchunks.
             fileset.reverse()
 
-        chunks = self._chunk_generator(fileset, treename)
+        return self._chunk_generator(fileset, treename)
+
+    def run(
+        self,
+        fileset: Union[Dict, str, List[WorkItem], Generator],
+        processor_instance: ProcessorABC,
+        treename: str = None,
+    ) -> Accumulatable:
+        """Run the processor_instance on a given fileset
+
+        Parameters
+        ----------
+            fileset : dict | str | List[WorkItem] | Generator
+                - A dictionary ``{dataset: [file, file], }``
+                  Optionally, if some files' tree name differ, the dictionary can be specified:
+                  ``{dataset: {'treename': 'name', 'files': [file, file]}, }``
+                - A single file name
+                - File chunks for self.preprocess()
+                - Chunk generator
+            treename : str, optional
+                name of tree inside each root file, can be ``None``;
+                treename can also be defined in fileset, which will override the passed treename
+                Not needed if processing premade chunks
+            processor_instance : ProcessorABC
+                An instance of a class deriving from ProcessorABC
+        """
+
+        meta = False
+        if not isinstance(fileset, (Mapping, str)):
+            if isinstance(fileset, Generator) or isinstance(fileset[0], WorkItem):
+                meta = True
+            else:
+                raise ValueError(
+                    "Expected fileset to be a mapping dataset: list(files) or filename"
+                )
+        if not isinstance(processor_instance, ProcessorABC):
+            raise ValueError("Expected processor_instance to derive from ProcessorABC")
+
+        if meta:
+            chunks = fileset
+        else:
+            chunks = self.preprocess(fileset, treename)
 
         if self.processor_compression is None:
             pi_to_send = processor_instance
@@ -1266,21 +1679,45 @@ class Runner:
         # hack around dask/dask#5503 which is really a silly request but here we are
         if isinstance(self.executor, DaskExecutor):
             self.executor.heavy_input = pi_to_send
-            closure = partial(self._work_function, processor_instance="heavy")
+            closure = partial(
+                self._work_function,
+                self.format,
+                self.xrootdtimeout,
+                self.mmap,
+                self.schema,
+                partial(self.get_cache, self.cachestrategy),
+                self.use_dataframes,
+                self.savemetrics,
+                processor_instance="heavy",
+            )
         else:
-            closure = partial(self._work_function, processor_instance=pi_to_send)
+            closure = partial(
+                self._work_function,
+                self.format,
+                self.xrootdtimeout,
+                self.mmap,
+                self.schema,
+                partial(self.get_cache, self.cachestrategy),
+                self.use_dataframes,
+                self.savemetrics,
+                processor_instance=pi_to_send,
+            )
 
         if self.format == "root":
             if self.dynamic_chunksize:
+                # chunks stay as generator
                 events_total = sum(f.metadata["numentries"] for f in fileset)
             else:
+                # materialize to list
                 chunks = [c for c in chunks]
                 events_total = sum(len(c) for c in chunks)
         else:
             chunks = [c for c in chunks]
 
         exe_args = {
-            "unit": "event" if isinstance(self.executor, WorkQueueExecutor) else "chunk",  # fmt: skip
+            "unit": "event"
+            if isinstance(self.executor, WorkQueueExecutor)
+            else "chunk",  # fmt: skip
             "function_name": type(processor_instance).__name__,
         }
         if self.format == "root" and isinstance(self.executor, WorkQueueExecutor):
@@ -1292,16 +1729,30 @@ class Runner:
                 }
             )
 
-        closure = partial(self.automatic_retries, closure)
+        closure = partial(
+            self.automatic_retries, self.retries, self.skipbadfiles, closure
+        )
 
         executor = self.executor.copy(**exe_args)
-        wrapped_out = executor(chunks, closure, None)
 
-        processor_instance.postprocess(wrapped_out["out"])
-        if self.savemetrics and not self.use_dataframes:
+        wrapped_out, e = executor(chunks, closure, None)
+        if wrapped_out is None:
+            raise ValueError(
+                "No chunks returned results, verify ``processor`` instance structure."
+            )
+        wrapped_out["exception"] = e
+        if not self.use_dataframes:
+            processor_instance.postprocess(wrapped_out["out"])
+
+        if "metrics" in wrapped_out.keys():
             wrapped_out["metrics"]["chunks"] = len(chunks)
-            return wrapped_out["out"], wrapped_out["metrics"]
-        return wrapped_out["out"]
+            for k, v in wrapped_out["metrics"].items():
+                if isinstance(v, set):
+                    wrapped_out["metrics"][k] = list(v)
+        if self.use_dataframes:
+            return wrapped_out["out"]
+        else:
+            return wrapped_out
 
 
 def run_spark_job(

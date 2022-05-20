@@ -20,7 +20,9 @@ class Weights(object):
 
     def __init__(self, size, storeIndividual=False):
         deprecate(
-            "This utility has moved to the `coffea.analysis_tools` subpackage and has new features, check it out!",
+            RuntimeError(
+                "This utility has moved to the `coffea.analysis_tools` subpackage and has new features, check it out!"
+            ),
             0.8,
         )
         self._weight = numpy.ones(size)
@@ -75,7 +77,7 @@ class Weights(object):
             self._modifiers[name + "Down"] = weightDown
         self._weightStats[name] = {
             "sumw": weight.sum(),
-            "sumw2": (weight ** 2).sum(),
+            "sumw2": (weight**2).sum(),
             "min": weight.min(),
             "max": weight.max(),
             "n": weight.size,
@@ -173,7 +175,9 @@ class PackedSelection(object):
         TODO: extend to multi-column for arbitrary bit depth
         """
         deprecate(
-            "This utility has moved to the `coffea.analysis_tools` subpackage and has new features, check it out!",
+            RuntimeError(
+                "This utility has moved to the `coffea.analysis_tools` subpackage and has new features, check it out!"
+            ),
             0.8,
         )
         self._dtype = numpy.dtype(dtype)

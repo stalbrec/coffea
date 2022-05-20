@@ -4,7 +4,6 @@ import os
 import re
 import tempfile
 import textwrap
-import hashlib
 import signal
 
 from os.path import basename, join
@@ -12,6 +11,7 @@ from os.path import basename, join
 import math
 import numpy
 import scipy
+import random
 
 from tqdm.auto import tqdm
 
@@ -95,6 +95,7 @@ class CoffeaWQTask(Task):
         self.itemid = itemid
 
         self.py_result = ResultUnavailable()
+        self._stdout = None
 
         self.clevel = exec_defaults["compression"]
 
@@ -102,7 +103,8 @@ class CoffeaWQTask(Task):
         self.infile_function = infile_function
 
         self.infile_args = join(tmpdir, "args_{}.p".format(self.itemid))
-        self.infile_output = join(tmpdir, "out_{}.p".format(self.itemid))
+        self.outfile_output = join(tmpdir, "out_{}.p".format(self.itemid))
+        self.outfile_stdout = join(tmpdir, "stdout_{}.p".format(self.itemid))
 
         self.retries = exec_defaults["retries"]
 
@@ -116,7 +118,8 @@ class CoffeaWQTask(Task):
         self.specify_input_file(fn_wrapper, "fn_wrapper", cache=False)
         self.specify_input_file(infile_function, "function.p", cache=False)
         self.specify_input_file(self.infile_args, "args.p", cache=False)
-        self.specify_output_file(self.infile_output, "output.p", cache=False)
+        self.specify_output_file(self.outfile_output, "output.p", cache=False)
+        self.specify_output_file(self.outfile_stdout, "stdout.log", cache=False)
 
         for f in exec_defaults["extra_input_files"]:
             self.specify_input_file(f, cache=True)
@@ -137,32 +140,38 @@ class CoffeaWQTask(Task):
         return str(self.itemid)
 
     def remote_command(self, env_file=None):
-        fn_command = (
-            "python fn_wrapper function.p args.p output.p 2>&1 | tee stdout.log"
-        )
+        fn_command = "python fn_wrapper function.p args.p output.p >stdout.log 2>&1"
         command = fn_command
 
         if env_file:
-            wrap = './py_wrapper -d -e env_file -u "$WORK_QUEUE_SANDBOX"/{}-env -- {}'
-            command = wrap.format(basename(env_file), fn_command)
+            wrap = (
+                './py_wrapper -d -e env_file -u "$WORK_QUEUE_SANDBOX"/{}-env-{} -- {}'
+            )
+            command = wrap.format(basename(env_file), os.getpid(), fn_command)
 
         return command
 
     @property
     def std_output(self):
-        return super().output
+        if not self._stdout:
+            try:
+                with open(self.outfile_stdout, "r") as rf:
+                    self._stdout = rf.read()
+            except Exception:
+                self._stdout = None
+        return self._stdout
 
     def _has_result(self):
         return not (
             self.py_result is None or isinstance(self.py_result, ResultUnavailable)
         )
 
-    # use output to return python result, rathern than stdout are regular wq
+    # use output to return python result, rathern than stdout as regular wq
     @property
     def output(self):
         if not self._has_result():
             try:
-                with open(self.infile_output, "rb") as rf:
+                with open(self.outfile_output, "rb") as rf:
                     result = dill.load(rf)
                     if self.clevel is not None:
                         result = _decompress(result)
@@ -175,7 +184,7 @@ class CoffeaWQTask(Task):
         os.remove(self.infile_args)
 
     def cleanup_outputs(self):
-        os.remove(self.infile_output)
+        os.remove(self.outfile_output)
 
     def resubmit(self, tmpdir, exec_defaults):
         if self.retries < 1 or not exec_defaults["split_on_exhaustion"]:
@@ -194,9 +203,10 @@ class CoffeaWQTask(Task):
 
         for t in resubmissions:
             _vprint(
-                "resubmitting {} partly as {}. {} attempt(s) left.",
+                "resubmitting {} partly as {} with {} events. {} attempt(s) left.",
                 self.itemid,
                 t.itemid,
+                len(t),
                 t.retries,
             )
             _wq_queue.submit(t)
@@ -321,14 +331,7 @@ class ProcCoffeaWQTask(CoffeaWQTask):
 
         ProcCoffeaWQTask.tasks_counter += 1
         if not itemid:
-            itemid = hashlib.sha256(
-                "proc_{}{}{}_{}".format(
-                    item.entrystart,
-                    item.entrystop,
-                    item.fileuuid,
-                    ProcCoffeaWQTask.tasks_counter,
-                ).encode()
-            ).hexdigest()[0:8]
+            itemid = "p_{}".format(ProcCoffeaWQTask.tasks_counter)
 
         self.item = item
 
@@ -363,36 +366,38 @@ class ProcCoffeaWQTask(CoffeaWQTask):
         if total < 2:
             raise RuntimeError("processing task cannot be split any further.")
 
-        middle = self.item.entrystart + int(total / 2)
+        # if the chunksize was updated to be less than total, then use that.
+        # Otherwise, just partition the task in two.
+        target_chunksize = exec_defaults["updated_chunksize"]
+        if total <= target_chunksize:
+            target_chunksize = math.ceil(total / 2)
 
-        item_a = WorkItem(
-            self.item.dataset,
-            self.item.filename,
-            self.item.treename,
-            self.item.entrystart,
-            middle,
-            self.item.fileuuid,
-            self.item.usermeta,
-        )
+        n = max(math.ceil(total / target_chunksize), 1)
+        actual_chunksize = int(math.ceil(total / n))
 
-        item_b = WorkItem(
-            self.item.dataset,
-            self.item.filename,
-            self.item.treename,
-            middle,
-            self.item.entrystop,
-            self.item.fileuuid,
-            self.item.usermeta,
-        )
+        splits = []
+        start = self.item.entrystart
+        while start < self.item.entrystop:
+            stop = min(self.item.entrystop, start + actual_chunksize)
 
-        task_a = self.__class__(
-            self.fn_wrapper, self.infile_function, item_a, tmpdir, exec_defaults
-        )
-        task_b = self.__class__(
-            self.fn_wrapper, self.infile_function, item_b, tmpdir, exec_defaults
-        )
+            w = WorkItem(
+                self.item.dataset,
+                self.item.filename,
+                self.item.treename,
+                start,
+                stop,
+                self.item.fileuuid,
+                self.item.usermeta,
+            )
 
-        return [task_a, task_b]
+            t = self.__class__(
+                self.fn_wrapper, self.infile_function, w, tmpdir, exec_defaults
+            )
+
+            start = stop
+            splits.append(t)
+
+        return splits
 
     def debug_info(self):
         i = self.item
@@ -423,7 +428,7 @@ class AccumCoffeaWQTask(CoffeaWQTask):
         self.size = sum(len(t) for t in self.tasks_to_accumulate)
 
         args = [exec_defaults["chunks_accum_in_mem"], exec_defaults["compression"]]
-        args = args + [[basename(t.infile_output) for t in self.tasks_to_accumulate]]
+        args = args + [[basename(t.outfile_output) for t in self.tasks_to_accumulate]]
 
         super().__init__(
             fn_wrapper, infile_function, args, itemid, tmpdir, exec_defaults
@@ -432,7 +437,7 @@ class AccumCoffeaWQTask(CoffeaWQTask):
         self.specify_category("accumulating")
 
         for t in self.tasks_to_accumulate:
-            self.specify_input_file(t.infile_output, cache=False)
+            self.specify_input_file(t.outfile_output, cache=False)
 
     def cleanup_inputs(self):
         super().cleanup_inputs()
@@ -571,7 +576,13 @@ def _work_queue_processing(
         items = iter(items)
 
     items_total = exec_defaults["events_total"]
+
+    # "chunksize" is the original chunksize passed to the executor. Always used
+    # if dynamic_chunksize is not given.
     chunksize = exec_defaults["chunksize"]
+
+    # keep a record of the latest computed chunksize, if any
+    exec_defaults["updated_chunksize"] = exec_defaults["chunksize"]
 
     progress_bars = _make_progress_bars(exec_defaults)
 
@@ -704,7 +715,7 @@ def _final_accumulation(accumulator, tasks_to_accumulate, compression):
     _vprint("Performing final accumulation...")
 
     accumulator = accumulate_result_files(
-        2, compression, [t.infile_output for t in tasks_to_accumulate], accumulator
+        2, compression, [t.outfile_output for t in tasks_to_accumulate], accumulator
     )
     for t in tasks_to_accumulate:
         t.cleanup_outputs()
@@ -792,7 +803,7 @@ def _declare_resources(exec_defaults):
 
             if (
                 category == "processing"
-                and exec_defaults["resource_mode"] == "max-throughput"
+                and exec_defaults["resources_mode"] == "max-throughput"
             ):
                 _wq_queue.specify_category_mode(
                     category, wq.WORK_QUEUE_ALLOCATION_MODE_MAX_THROUGHPUT
@@ -819,6 +830,7 @@ def _submit_proc_task(
 ):
     if update_chunksize:
         item = items.send(chunksize)
+        exec_defaults["updated_chunksize"] = chunksize
     else:
         item = next(items)
 
@@ -952,7 +964,7 @@ def _make_progress_bars(exec_defaults):
     status = exec_defaults["status"]
     unit = exec_defaults["unit"]
     bar_format = exec_defaults["bar_format"]
-    chunksize = exec_defaults["chunksize"]
+    chunksize = exec_defaults["updated_chunksize"]
     chunks_per_accum = exec_defaults["chunks_per_accum"]
 
     submit_bar = tqdm(
@@ -1021,11 +1033,10 @@ class VerbosePrint:
 _vprint = VerbosePrint()
 
 
-def _ceil_to_pow2(value):
+def _floor_to_pow2(value):
     if value < 1:
         return 1
-
-    return pow(2, math.ceil(math.log2(value)))
+    return pow(2, math.floor(math.log2(value)))
 
 
 def _compute_chunksize(task_reports, exec_defaults, sample=True):
@@ -1055,18 +1066,16 @@ def _compute_chunksize(task_reports, exec_defaults, sample=True):
         chunksize = chunksize_default
 
     try:
-        chunksize = _ceil_to_pow2(chunksize)
-        exp = math.ceil(math.log2(chunksize))
+        chunksize = int(_floor_to_pow2(chunksize))
         if sample:
-            # round-up to nearest power of 2, minus 0, 1 or 2 power to better sample the space.
-            exp += numpy.random.choice([-2, -1, 0])
-        else:
-            # on average, this what we would get as the average of all the sampling
-            # this is useful when reporting the final chunksize used.
-            exp += -1
-
-        exp = max(0, exp)
-        chunksize = int(math.pow(2, exp))
+            # sample between value found and one minue, to better explore the
+            # space.  we take advantage of the fact that the function that
+            # generates chunks tries to have equally sized work units per file.
+            # Most files have a different number of events, which is unlikely
+            # to be a multiple of the chunsize computed. Just in case all files
+            # have a multiple of the chunsize, we return chunksize - 1 half the
+            # time.
+            chunksize = random.choice([chunksize, max(chunksize - 1, 1)])
     except ValueError:
         chunksize = chunksize_default
 
@@ -1081,10 +1090,10 @@ def _compute_chunksize_target(target, pairs):
     avgs = [e / max(1, target) for (target, e) in pairs]
     quantiles = numpy.quantile(avgs, [0.25, 0.5, 0.75], interpolation="nearest")
 
-    # remove outliers outside the 25%---75% range
+    # remove outliers below the 25%
     pairs_filtered = []
     for (i, avg) in enumerate(avgs):
-        if avg >= quantiles[0] and avg <= quantiles[-1]:
+        if avg >= quantiles[0]:
             pairs_filtered.append(pairs[i])
 
     try:

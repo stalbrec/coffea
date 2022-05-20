@@ -83,7 +83,7 @@ def _get_global_index(target, eventindex, index):
 
 
 @awkward.mixin_class(behavior)
-class Particle(vector.PtEtaPhiMLorentzVector, base.NanoCollection):
+class Particle(vector.LorentzVector, base.NanoCollection):
     """Generic particle collection that has Lorentz vector properties"""
 
     @property
